@@ -1,3 +1,6 @@
+# Build outputs (generated)
+slide_embed.html
+
 # Python / uv
 .venv/
 __pycache__/
@@ -8,3 +11,4 @@ __pycache__/
 Thumbs.db
 *.swp
 .vscode/
+
