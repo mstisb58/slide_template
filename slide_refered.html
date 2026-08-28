@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Presentation</title>
+    <link rel="stylesheet" href="./assets/css/reveal.min.css">
+  <link rel="stylesheet" href="./assets/css/katex.min.css">
+  <link rel="stylesheet" href="./assets/css/highlight-dark.min.css">
+  <link rel="stylesheet" href="./assets/css/theme-custom.css">
+  <script src="./assets/js/plotly.min.js"></script>
+  <script src="./assets/js/katex.min.js"></script>
+  <script src="./assets/js/katex-auto.min.js"></script>
+  <script src="./assets/js/highlight.min.js"></script>
+</head>
+  <!-- コントロールボタンバー (左下) -->
+  <div class="slide-controls-bar">
+    <button class="control-btn" id="btn-overview" onclick="toggleTileModal();" title="全スライド一覧 (ESC / O)">
+      📑 タイル一覧
+    </button>
+    <button class="control-btn" id="btn-fullscreen" onclick="toggleFullscreen();" title="全画面表示 (F / F11)">
+      ⛶ 全画面
+    </button>
+  </div>
+
+  <!-- タイル一覧モーダル -->
+  <div id="slide-tile-modal">
+    <div class="tile-header">
+      <h2>📑 全スライド一覧</h2>
+      <button class="tile-close-btn" onclick="toggleTileModal();">閉じる (ESC)</button>
+    </div>
+    <div class="tile-grid" id="tile-grid-container"></div>
+  </div>
+
+  <div class="reveal">
+    <div class="slides">
+      <!-- 全スライド共通のロゴ (1280x720スライド用紙の内側に完全固定) -->
+      <div class="slide-fixed-logo"></div>
+<section class="title-section">
+<div class="title-slide">
+  <div class="title-date">20260903</div>
+  <div class="title-body">
+    <h1>NIR-HSIを用いた毛髪診断システムの開発</h1>
+    <p class="title-subtitle">毛髪でひも解く漢方体質分類</p>
+  </div>
+  <div class="title-author">礒辺真人</div>
+</div>
+</section>
+<section>
+<h2>目次</h2>
+<div class="agenda-list is-step">
+  <div class="agenda-item fragment" data-fragment-index="1"><span class="agenda-num">01</span> <span>背景</span></div>
+  <div class="agenda-item"><span class="agenda-num">02</span> <span>漢方体質アンケート</span></div>
+  <div class="agenda-item"><span class="agenda-num">03</span> <span>アンケート結果解析</span></div>
+  <div class="agenda-item"><span class="agenda-num">04</span> <span>毛髪とアンケート</span></div>
+  <div class="agenda-item"><span class="agenda-num">05</span> <span>今後の展開と課題</span></div>
+</div>
+</section>
+<section>
+<h2>背景：漢方体質とは？気血水の基本概念</h2>
+<p>漢方医学では、人体は<strong>「気」「血」「水」</strong>の3要素がバランスよく巡ることで健康が保たれると考えられている。</p>
+<div class="grid-3">
+<div class="card card-yellow">
+<p><strong>気：生命エネルギー・代謝</strong></p>
+<p>自律神経系や代謝を司る活力</p>
+<ul>
+<li><strong>気虚</strong>: エネルギー不足・疲労・胃腸虚弱</li>
+<li><strong>気滞</strong>: 気の滞り・抑うつ・膨満感</li>
+<li><strong>気逆</strong>: 気の逆流・のぼせ・動悸</li>
+</ul>
+</div>
+<div class="card card-red">
+<p><strong>血：血液・ホルモン・栄養</strong></p>
+<p>全身に酸素や栄養を届ける働き</p>
+<ul>
+<li><strong>血虚</strong>: 栄養不足・肌荒れ・貧血・不眠</li>
+<li><strong>瘀血</strong>: 血行不良・微小循環不全・冷えのぼせ</li>
+</ul>
+</div>
+<div class="card card-blue">
+<p><strong>水：体液・リンパ・水分代謝</strong></p>
+<p>血液以外の水分や分泌液</p>
+<ul>
+<li><strong>水滞 / 水毒</strong>: 水分代謝異常・むくみ・めまい・頭重感</li>
+</ul>
+</div>
+</div>
+<div class="point-box">
+<p>日本独自の発展（古方派）</p>
+<p>中国の思弁的な理論に対し、日本の江戸時代（吉益東洞ら）の実証的な漢方医学において、病態をシンプルに捉える指標として発展・体系化。</p>
+</div>
+</section>
+<section>
+<h2>背景: クラシエ × 漢方体質</h2>
+<ul>
+<li>クラシエでは独自項目として、冷えに関する調査に加え<strong>69項目の「寺沢式漢方体質診断アンケート」</strong>を付帯調査として実施・データ蓄積。</li>
+<li>弘前健診で取得したNIR-HSIのデータとクラシエ独自の漢方体質分類から見えることはあるのか？</li>
+<li>漢方体質は毛髪へと発言するのか探索する。</li>
+</ul>
+<div class="images-2" style="--img-max-h: 350px;">
+<img class="slide-img" alt="NIR-HSIキューブデータ" src="graph/cube.png" />
+<img class="slide-img" alt="漢方体質分類" src="graph/taishitu.png" />
+</div>
+<div class="point-box">
+<p>本検討では、クラシエ独自の毛髪NIR-HSIのデータと漢方体質分類から見えることを探索する。</p>
+</div>
+</section>
+<section>
+<h2>目次</h2>
+<div class="agenda-list is-step">
+  <div class="agenda-item"><span class="agenda-num">01</span> <span>背景</span></div>
+  <div class="agenda-item fragment" data-fragment-index="1"><span class="agenda-num">02</span> <span>漢方体質アンケート</span></div>
+  <div class="agenda-item"><span class="agenda-num">03</span> <span>アンケート結果解析</span></div>
+  <div class="agenda-item"><span class="agenda-num">04</span> <span>毛髪とアンケート</span></div>
+  <div class="agenda-item"><span class="agenda-num">05</span> <span>今後の展開と課題</span></div>
+</div>
+</section>
+<section>
+<h2>漢方体質アンケート</h2>
+<p>2024年の弘前健診の漢方体質アンケート(69項目)をスコア化して足し合わせ、<br></p>
+<p>被験者ごとに６分類それぞれのスコアを割り振る。各ステージごとにクラスタリング。</p>
+<div class="grid-3">
+<div class="card">
+<p>Stage1</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>項目1</th>
+      <th>項目2</th>
+      <th>・・・</th>
+      <th>項目69</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>1</td>
+      <td>2</td>
+      <td>・・・</td>
+      <td>1</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>2</td>
+      <td>3</td>
+      <td>・・・</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+    </tr>
+    <tr>
+      <td>1200</td>
+      <td>2</td>
+      <td>1</td>
+      <td>・・・</td>
+      <td>3</td>
+    </tr>
+  </tbody>
+</table>
+<p>各項目に対して「該当する：1」「たまに該当する:2」「該当しない:3」のように３段階で解答</p>
+</div>
+<div class="card">
+<p>Stage2</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>項目1</th>
+      <th>項目2</th>
+      <th>・・・</th>
+      <th>項目69</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>気虚+0</td>
+      <td>水滞+3</td>
+      <td>・・・</td>
+      <td>血虚+1</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>気虚+1</td>
+      <td>水滞+1</td>
+      <td>・・・</td>
+      <td>血虚+2</td>
+    </tr>
+    <tr>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+    </tr>
+    <tr>
+      <td>1200</td>
+      <td>気虚+3</td>
+      <td>水滞+0</td>
+      <td>・・・</td>
+      <td>血虚+1</td>
+    </tr>
+  </tbody>
+</table>
+<p>項目ごとに６分類の重み付けスコアを付与</p>
+</div>
+<div class="card">
+<p>Stage3</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>気虚</th>
+      <th>気滞</th>
+      <th>・・・</th>
+      <th>瘀血</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>25</td>
+      <td>14</td>
+      <td>・・・</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>31</td>
+      <td>21</td>
+      <td>・・・</td>
+      <td>12</td>
+    </tr>
+    <tr>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+      <td>・・・</td>
+    </tr>
+    <tr>
+      <td>1200</td>
+      <td>4</td>
+      <td>6</td>
+      <td>・・・</td>
+      <td>14</td>
+    </tr>
+  </tbody>
+</table>
+<p>各分類ごとに足し合わせて、体質スコアを算出</p>
+</div>
+</div>
+</section>
+<section>
+<h2>アンケート解析</h2>
+<p>漢方<strong>体質</strong>と呼んでいるが、実際に体質と呼べるような分類がされているのか？</p>
+<p>弘前健診受診者の漢方体質アンケートについて、クラスタリングを実施し、被験者がどのような人たちで構成されているのか確認する。</p>
+<p>各ステージごとに、</p>
+<p>PCA（可視化のため）→GMM(クラスタリングの一種)→BIC/AICによるクラスター数の決定→可視化の手順で解析。</p>
+<div class="point-box">
+<ul>
+<li><strong>GMM (混合ガウスモデル)</strong>:</li>
+</ul>
+<p>  データを確率分布の重なりとして捉える手法。K-Means（0か1かの二者択一）と異なり、<strong>「気虚60%・水滞40%」のような体質のグラデーション（所属確率）</strong>を柔軟にモデル化できる。</p>
+<ul>
+<li><strong>BIC / AIC（情報量規準）</strong>:</li>
+</ul>
+<p>  クラスターを細かく分けすぎる「過学習」を防ぎ、<strong>データの構造を最もシンプルかつ正確に説明できる最適なクラスター数（指標の値が最小となる点）</strong>を客観的に決定。</p>
+</div>
+</section>
+<section>
+<h2>段階表示（ステップアニメーション）</h2>
+<p>キーボードの <strong>[ → ]</strong> または <strong>[ Space ]</strong> を押すと、1行ずつ順番に表示されます：</p>
+<ul style="margin-left:24px;">
+<li class="fragment">1番目の重要なポイント（クリックで出現）</li>
+<li class="fragment">2番目の詳細な説明（さらにクリックで出現）</li>
+<li class="fragment">3番目の結論・まとめ（最後にフェードイン）</li>
+</ul>
+</section>
+<section>
+<section>
+<h2>3Dデータ分析結果 (本編)</h2>
+<div class="grid-2">
+<div>
+<h3>多次元データの可視化</h3>
+<ul>
+<li>マウスでグラフを360度回転可能</li>
+<li>直感的にクラスタや傾向を把握</li>
+</ul>
+<blockquote>💡 <strong>キーボードの [ ↓ ] を押すと、下の詳細スライドへ進みます</strong></blockquote>
+</div>
+<div>
+<!-- 3Dグラフのサンプル (Plotly) -->
+<div id="chart-3d" style="width: 100%; height: 460px;"></div>
+<script>
+(function() {
+  function render() {
+    const el = document.getElementById('chart-3d');
+    if (!el || typeof Plotly === 'undefined') return;
+
+    // 3D曲面データの生成 (シンプルに計算)
+    const size = 30;
+    const x = [], y = [], z = [];
+    for (let i = 0; i < size; i++) {
+      x.push(i - size / 2);
+      y.push(i - size / 2);
+    }
+    for (let i = 0; i < size; i++) {
+      const row = [];
+      for (let j = 0; j < size; j++) {
+        const r = Math.sqrt(x[i] * x[i] + y[j] * y[j]) + 0.1;
+        row.push(Math.sin(r) / r * 8);
+      }
+      z.push(row);
+    }
+
+    const data = [{
+      type: 'surface',
+      z: z,
+      x: x,
+      y: y,
+      colorscale: 'Viridis',
+      showscale: false
+    }];
+
+    const layout = {
+      margin: { l: 0, r: 0, b: 0, t: 0 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      scene: {
+        xaxis: { title: 'X', color: '#94a3b8' },
+        yaxis: { title: 'Y', color: '#94a3b8' },
+        zaxis: { title: 'Z', color: '#94a3b8' }
+      }
+    };
+
+    Plotly.newPlot(el, data, layout, { responsive: true });
+  }
+
+  // 描画実行
+  if (document.readyState === 'complete') {
+    render();
+  } else {
+    window.addEventListener('load', render);
+  }
+  document.addEventListener('reveal-slide-changed', render);
+})();
+</script>
+</div>
+</section>
+<section>
+<h2>3Dデータ分析の補足 (縦送り詳細スライド)</h2>
+<div class="grid-2">
+<div>
+<h3>月次推移の内訳 (2D)</h3>
+<ul>
+<li>縦送り（<code>--</code>）を使うと、本編の流れを邪魔せずに補足資料や詳細データを配置できます。</li>
+<li>キーボードの <strong>[ ↑ ] で上のスライド</strong>、<strong>[ → ] で次の章</strong>へ移動します。</li>
+</ul>
+</div>
+<div>
+<!-- 2Dグラフのサンプル (Plotly) -->
+<div id="chart-2d" style="width: 100%; height: 460px;"></div>
+<script>
+(function() {
+  function render() {
+    const el = document.getElementById('chart-2d');
+    if (!el || typeof Plotly === 'undefined') return;
+
+    const data = [
+      {
+        x: ['1月', '2月', '3月', '4月', '5月', '6月'],
+        y: [12, 28, 45, 38, 62, 90],
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: '実績値',
+        line: { color: '#38bdf8', width: 3 },
+        marker: { size: 8 }
+      },
+      {
+        x: ['1月', '2月', '3月', '4月', '5月', '6月'],
+        y: [15, 20, 35, 40, 50, 70],
+        type: 'bar',
+        name: '目標値',
+        marker: { color: 'rgba(129, 140, 248, 0.5)' }
+      }
+    ];
+
+    const layout = {
+      margin: { l: 50, r: 20, b: 50, t: 30 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#94a3b8' },
+      xaxis: { gridcolor: 'rgba(255,255,255,0.1)' },
+      yaxis: { gridcolor: 'rgba(255,255,255,0.1)' },
+      legend: { font: { color: '#f8fafc' } }
+    };
+
+    Plotly.newPlot(el, data, layout, { responsive: true });
+  }
+
+  if (document.readyState === 'complete') {
+    render();
+  } else {
+    window.addEventListener('load', render);
+  }
+  document.addEventListener('reveal-slide-changed', render);
+})();
+</script>
+</div>
+</section>
+</section>
+<section>
+<h2>高度な表現力（数式 ＆ コード）</h2>
+<div class="grid-2">
+<div>
+<h3>🧮 数式表示 (LaTeX / KaTeX)</h3>
+<p>正規分布の確率密度関数：</p>
+<p>$$ f(x) = \frac{1}{\sigma \sqrt{2\pi}} e^{-\frac{1}{2}\left(\frac{x-\mu}{\sigma}\right)^2} $$</p>
+<p>インライン数式も $E = mc^2$ のように書けます。</p>
+</div>
+<div>
+<h3>💻 コードハイライト</h3>
+<pre><code class="language-python">def predict_roi(users, arpu, growth_rate):
+    # リアルタイム試算ロジック
+    monthly_rev = users * arpu
+    return monthly_rev * (1 + growth_rate)</code></pre>
+</div>
+</section>
+<section>
+<h2>機能比較表（Markdownテーブル）</h2>
+<table>
+  <thead>
+    <tr>
+      <th>比較項目</th>
+      <th>従来のPowerPoint</th>
+      <th>HTML次世代スライド</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>グラフの操作性</strong></td>
+      <td>❌ 静止画のみ</td>
+      <td>⭕ <strong>3D回転・ズーム・ホバー</strong></td>
+    </tr>
+    <tr>
+      <td><strong>オフライン配布</strong></td>
+      <td>❌ PPTX専用ソフト必要</td>
+      <td>⭕ <strong>ブラウザだけで単一HTML動作</strong></td>
+    </tr>
+    <tr>
+      <td><strong>バージョン管理</strong></td>
+      <td>❌ バイナリで差分不明</td>
+      <td>⭕ <strong>Git ＆ Markdownで完全管理</strong></td>
+    </tr>
+    <tr>
+      <td><strong>数式・コード</strong></td>
+      <td>⚠️ 画像貼り付けが多い</td>
+      <td>⭕ <strong>LaTeX数式 ＆ シンタックス色分け</strong></td>
+    </tr>
+  </tbody>
+</table>
+</section>
+<section>
+<h2>今後の展開（3つの柱）</h2>
+<div class="grid-3">
+<div class="card">
+<h3>① 迅速な共有</h3>
+<p>単一HTMLファイルで出力されるため、社内メールやチャットで即座に共有可能。</p>
+</div>
+<div class="card">
+<h3>② 柔軟なカスタマイズ</h3>
+<p>MarkdownとCSS変数を書き換えるだけで、好みのデザインにすぐ変更できます。</p>
+</div>
+<div class="card">
+<h3>③ 描画力アップ</h3>
+<p>Plotlyによる動的グラフで、説得力のあるプレゼン体験を提供します。</p>
+</div>
+</div>
+</section>
+    </div>
+  </div>
+
+
+  <script src="./assets/js/reveal.min.js"></script>
+  <script>
+    // Reveal.jsの初期化
+    Reveal.initialize({
+      hash: true,
+      slideNumber: 'c/t',
+      showSlideNumber: 'all',
+      transition: 'slide',
+      center: false,
+      width: 1280,
+      height: 720,
+      margin: 0,
+      minScale: 0.1,
+      maxScale: 4.0
+    });
+
+
+    // 1. 全画面表示 (Fullscreen)
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(err => {
+            console.log('Fullscreen note:', err.message);
+          });
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // 2. タイル一覧モーダル
+    function toggleTileModal() {
+      const modal = document.getElementById('slide-tile-modal');
+      const isActive = modal.classList.toggle('active');
+      if (isActive) {
+        buildTileGrid();
+      }
+    }
+
+    function buildTileGrid() {
+      const container = document.getElementById('tile-grid-container');
+      container.innerHTML = '';
+      const indices = Reveal.getIndices();
+
+      const horizontalSections = document.querySelectorAll('.reveal .slides > section');
+      let slideCounter = 1;
+
+      horizontalSections.forEach((hSec, hIdx) => {
+        const verticalSections = hSec.querySelectorAll('section');
+        if (verticalSections.length > 0) {
+          verticalSections.forEach((vSec, vIdx) => {
+            createTileItem(container, vSec, hIdx, vIdx, `${slideCounter} (縦 ${vIdx + 1})`, hIdx === indices.h && vIdx === indices.v);
+            slideCounter++;
+          });
+        } else {
+          createTileItem(container, hSec, hIdx, 0, `${slideCounter}`, hIdx === indices.h && indices.v === 0);
+          slideCounter++;
+        }
+      });
+    }
+
+    function createTileItem(container, secEl, h, v, label, isCurrent) {
+      const tile = document.createElement('div');
+      tile.className = 'slide-tile-item' + (isCurrent ? ' current' : '');
+
+      const heading = secEl.querySelector('h1, h2, h3');
+      let titleText = 'スライド ' + label;
+      if (heading && heading.textContent) {
+        titleText = heading.textContent.replace(/#/g, '').trim();
+      }
+
+      const snippetEl = secEl.querySelector('p, li, .agenda-item, td');
+      const snippetText = snippetEl && snippetEl.textContent ? snippetEl.textContent.trim().slice(0, 60) : '';
+
+      tile.innerHTML = `
+        <div>
+          <div class="tile-badge">Slide #${label} ${isCurrent ? ' (現在地)' : ''}</div>
+          <div class="tile-title">${titleText}</div>
+          <div class="tile-snippet">${snippetText}</div>
+        </div>
+      `;
+
+      tile.onclick = function() {
+        Reveal.slide(h, v);
+        toggleTileModal();
+      };
+
+      container.appendChild(tile);
+    }
+
+    // キーボードショートカット
+    window.addEventListener('keydown', function(e) {
+      // ESCまたはOキー: タイル一覧の開閉
+      if (e.key === 'Escape' || e.key === 'o' || e.key === 'O') {
+        const modal = document.getElementById('slide-tile-modal');
+        if (modal && modal.classList.contains('active')) {
+          toggleTileModal();
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    });
+
+    // Reveal.jsにFキーの全画面バインドを登録 (ブラウザ権限エラーを防止)
+    Reveal.addKeyBinding({ keyCode: 70, key: 'F', description: 'Toggle Fullscreen' }, function() {
+      toggleFullscreen();
+    });
+
+
+    // シンタックスハイライト & 数式レンダリング
+    function initEnhancements() {
+      if (typeof hljs !== 'undefined') {
+        hljs.highlightAll();
+      }
+      if (typeof renderMathInElement !== 'undefined') {
+        renderMathInElement(document.body, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false}
+          ],
+          throwOnError: false
+        });
+      }
+    }
+
+    // スライド切り替えイベント
+    function triggerPlotlyResize() {
+      if (typeof Plotly !== 'undefined') {
+        window.dispatchEvent(new Event('resize'));
+        document.querySelectorAll('.js-plotly-plot, [id^="chart-"], [id^="plotly-"]').forEach(function(el) {
+          try { Plotly.Plots.resize(el); } catch(e) {}
+        });
+      }
+    }
+
+    function updateSlideState() {
+      const indices = Reveal.getIndices();
+      const isTitle = (indices.h === 0 && indices.v === 0);
+      document.body.classList.toggle('is-title-slide', isTitle);
+    }
+
+    Reveal.on('ready', function() {
+      initEnhancements();
+      updateSlideState();
+      setTimeout(triggerPlotlyResize, 200);
+    });
+
+    Reveal.on('slidechanged', function() {
+      updateSlideState();
+      setTimeout(triggerPlotlyResize, 100);
+    });
+  </script>
+</body>
+
+</html>

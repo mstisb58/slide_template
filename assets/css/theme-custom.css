@@ -1,0 +1,690 @@
+/* ==========================================================================
+   スライド用カスタムテーマ
+   ========================================================================== */
+:root {
+  /* ==========================================================================
+     フォント一括設定
+     ========================================================================== */
+  --font-main: "BIZ UDPGothic", "BIZ UDPゴシック", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", Arial, sans-serif;
+  --font-code: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+
+  /* ==========================================================================
+     5色黄金比カラーパレット
+     ========================================================================== */
+  --bg-main: #ffffff;
+  /* スライド背景色: 白 */
+  --text-main: #1e293b;
+  /* 基本文字色: 黒 (ダークスレート) */
+  --text-sub: #64748b;
+  /* サブ文字色: 灰色 */
+
+  --accent: #FFD500;
+  /* ★ コーポレートカラー (メイン線・帯) */
+  --accent-light: #FFE666;
+  /* ★ 薄黄色 (pointボックス背景用) */
+  --accent-dark: #998000;
+  /* ★ 濃いゴールド (アイコン・細線) */
+  --accent-blue: #002BFF;
+  /* ★ 強調文字・重要アクセント (ロイヤルブルー) */
+  --accent-blue-light: #4D6AFF;
+  /* ★ ソフトブルー (小見出し用) */
+
+  --accent-secondary: var(--accent-blue);
+  /* サブアクセント (ブルー) */
+  --headbar-color: var(--accent);
+  /* 見出し下線色 (#FFD500) */
+  --border-color: #e2e8f0;
+  /* 境界線 */
+  --card-bg: rgba(255, 230, 102, 0.16);
+  /* カード背景 (#FFE666 + アルファ) */
+}
+
+
+
+/* 画面全体（スライドの外側の余白・黒帯部分） */
+body,
+.reveal {
+  font-family: var(--font-main) !important;
+  /* ★ スライド全体のフォント */
+  background-color: #000000 !important;
+  color: var(--text-main) !important;
+}
+
+
+/* 16:9 スライド本体（1280x720）の設定 */
+.reveal .slides {
+  text-align: left;
+  background-color: var(--bg-main) !important;
+  background-image:
+    linear-gradient(to bottom, #FFD500 0px, rgba(255, 213, 0, 0.4) 6px, transparent 30px),
+    linear-gradient(to top, #FFD500 0px, rgba(255, 213, 0, 0.4) 6px, transparent 30px) !important;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.9) !important;
+  border-radius: 4px;
+}
+
+
+.reveal .slides section:not(.stack) {
+  padding: 35px 55px !important;
+  box-sizing: border-box !important;
+}
+
+/* 全スライド共通のロゴマーク (1280x720スライド用紙の内側に完全固定) */
+.reveal .slides .slide-fixed-logo {
+  position: absolute !important;
+  top: -60px !important;
+  right: 28px !important;
+  height: 200px;
+  aspect-ratio: 1;
+  background: url("./logo.svg") no-repeat center / contain;
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 999;
+  transition: opacity 0.2s ease;
+}
+
+/* 表紙スライド（インデックス0）ではロゴを非表示 */
+body.is-title-slide .slide-fixed-logo {
+  opacity: 0 !important;
+}
+
+
+/* ==========================================================================
+   見出しのスタイル
+   ========================================================================== */
+
+/* 見出しのスタイル (h1, h2, h3 共通のベース設定) */
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  color: var(--text-main) !important;
+  /* 文字色: メイン色 */
+  font-weight: 700 !important;
+  /* 太さ: 太字(ボールド) */
+  letter-spacing: -0.01em;
+  /* 文字間隔: わずかに詰めて引き締める */
+  text-transform: none !important;
+  /* 英字: 勝手に大文字変換されるのを防ぐ */
+}
+
+/* h1のスタイル (スライド最上位の見出し・大タイトル用) */
+.reveal h1 {
+  font-size: 2.5em !important;
+  /* 文字サイズ: 特大 */
+  color: var(--text-main) !important;
+  margin-bottom: 0.3em !important;
+  /* 下の余白: 少し空ける */
+}
+
+/* h2のスタイル (各スライドのページタイトル用) */
+.reveal h2 {
+  font-size: 1.6em !important;
+  /* 文字サイズ: 大 */
+  border-bottom: 2px solid var(--headbar-color);
+  /* 下線: アクセントカラーの2px実線 */
+  padding-bottom: 8px;
+  /* 文字と下線の間の隙間 */
+  margin-bottom: 24px !important;
+  /* 下の本文との間の余白 */
+}
+
+/* h3のスタイル (カード内や小見出し用) */
+.reveal h3 {
+  font-size: 1.2em !important;
+  /* 文字サイズ: 中 */
+  color: var(--accent-blue) !important;
+  /* 文字色: ロイヤルブルー */
+  margin-bottom: 12px !important;
+  /* 下の要素との余白 */
+}
+
+/* ==========================================================================
+   本文・リスト・装飾テキストのスタイル
+   ========================================================================== */
+
+/* 本文 (通常の段落テキスト <p>) */
+.reveal p {
+  font-size: 1.5em;
+  /* 文字サイズ: 標準スライドサイズ */
+  line-height: 1.2;
+  color: var(--text-main);
+  /* 文字色: 基本黒系 */
+  margin-top: 0px !important;
+  margin-bottom: 12px !important;
+  /* 下だけ適度に空ける */
+}
+
+/* リスト全体 (箇条書き <ul> / 番号付きリスト <ol>) */
+.reveal ul,
+.reveal ol {
+  font-size: 1.5em;
+  /* 文字サイズ: 本文よりわずかにコンパクト */
+  line-height: 1.2;
+  /* 行間: 項目同士が詰まらないよう広め */
+  color: var(--text-main);
+  /* 文字色: 基本黒系 */
+  margin-left: 8px;
+  /* 左のインデント(字下げ幅) */
+}
+
+/* 箇条書きの各項目 (<li>) */
+.reveal li {
+  margin-bottom: 8px;
+  /* 項目と項目の間の下の隙間 */
+}
+
+/* 太字・強調テキスト (<strong> または Markdownの **文字**) */
+.reveal strong {
+  color: var(--accent-blue) !important;
+  font-weight: bold;
+}
+
+/* 引用・補足ブロック (<blockquote> または Markdownの > ) */
+.reveal blockquote {
+  background: rgba(255, 230, 102, 0.2);
+  /* 背景色: #FFE666 + アルファ */
+  border-left: 4px solid var(--accent);
+  /* 左のアクセントバー: コーポレートイエロー (#FFD500) */
+  padding: 12px 18px;
+  /* 内側の余白(上下12px, 左右18px) */
+  margin: 16px 0;
+  /* 上下の外側余白 */
+  font-style: normal;
+  /* フォントスタイル: 斜体にせず直立 */
+  border-radius: 4px;
+  /* 角丸: 4pxの丸み */
+  color: var(--text-main);
+}
+
+
+/* プログラムコード全体のフォント指定 */
+.reveal code,
+.reveal pre code {
+  font-family: var(--font-code) !important;
+  /* 等幅フォント(Consolas等)を適用 */
+}
+
+/* 文章中のインラインコード (Markdownの `code` 部分) */
+.reveal code:not(pre code) {
+  background: rgba(255, 213, 0, 0.2);
+  /* 背景色: 薄いイエロー */
+  color: #b45309;
+  /* 文字色: 視認性の高いアンバーゴールド */
+  padding: 2px 6px;
+  /* 内側余白: 上下2px, 左右6px */
+  border-radius: 4px;
+  /* 角丸: 4px */
+  font-weight: 600;
+}
+
+
+
+/* ==========================================================================
+   テーブル（表）のスタイル
+   ========================================================================== */
+.reveal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 0.85em;
+}
+
+.reveal th,
+.reveal td {
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.reveal th {
+  background: rgba(255, 213, 0, 0.2);
+  /* 表見出し背景: 薄いイエロー */
+  color: var(--text-main);
+  /* 表見出し文字色: ダークスレート */
+  font-weight: 700;
+  border-bottom: 2px solid var(--accent);
+}
+
+.reveal tr:nth-child(even) {
+  background: #f8fafc;
+  /* 偶数行: ほんのりグレーで読みやすく */
+}
+
+/* ==========================================================================
+   コードブロック
+   ========================================================================== */
+.reveal pre {
+  background: #1e293b !important;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  font-size: 0.8em;
+  line-height: 1.5;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.reveal pre code {
+  background: transparent !important;
+  color: #f8fafc;
+  padding: 0;
+}
+
+/* ==========================================================================
+   メディア（画像・動画・iframe）
+   ========================================================================== */
+.slide-video,
+.slide-img {
+  max-width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* ==========================================================================
+   定番スライド用テンプレート・レイアウトクラス
+   ========================================================================== */
+
+/* 1. 表紙（タイトルスライド用）: 画面全体を使った美しい3分割配置 */
+.reveal .slides section.title-section {
+  height: 720px !important;
+  min-height: 720px !important;
+  top: 0 !important;
+  padding: 50px 60px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+}
+
+/* 表紙スライドの外枠 */
+.title-slide {
+  position: relative !important;
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+/* 1. 左上の日付（タイトルとは無関係に自由に動かせる） */
+.title-slide .title-date {
+  position: absolute !important;
+  top: 100px !important;
+  left: 0px !important;
+  margin: 0 !important;
+  font-size: 2em !important;
+  color: var(--text-sub) !important;
+  text-align: left !important;
+}
+
+/* 2. 画面中央のタイトル＋サブタイトル（常に画面の中心に固定） */
+.title-slide .title-body {
+  width: 100% !important;
+  text-align: center !important;
+}
+
+/* メインタイトル */
+.title-slide .title-body h1 {
+  margin: 0 0 18px 0 !important;
+  font-size: 3em !important;
+  color: var(--text-main) !important;
+  line-height: 1.25 !important;
+  text-align: center !important;
+}
+
+/* タイトル直下のサブタイトル */
+.title-slide .title-body .title-subtitle {
+  margin: 0 !important;
+  font-size: 2em !important;
+  color: var(--text-main) !important;
+  text-align: center !important;
+}
+
+/* 3. 右下の発表者名（タイトルとは無関係に自由に動かせる） */
+.title-slide .title-author {
+  position: absolute !important;
+  bottom: 50px !important;
+  right: 50px !important;
+  margin: 0 !important;
+  font-size: 2em !important;
+  color: var(--text-sub) !important;
+  text-align: right !important;
+  font-weight: 500 !important;
+}
+
+
+/* 2. 目次（アジェンダ）リスト */
+.agenda-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.agenda-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  padding: 16px 20px;
+  border-radius: 8px;
+  font-size: 0.95em;
+  color: var(--text-main);
+  transition: all 0.3s ease;
+}
+
+/* 通常の目次番号バッジ */
+.agenda-num {
+  background: var(--accent);
+  color: #000000;
+  font-weight: bold;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.9em;
+  transition: all 0.3s ease;
+}
+
+/* ==========================================================================
+   目次ステップハイライト（現在話す項目だけ明るく、他を薄くする）
+   ========================================================================== */
+/* 最初は全員そのまま表示 (Reveal.jsのfragment隠蔽を上書き) */
+.agenda-list.is-step .agenda-item.fragment {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* いずれかの項目が選択された時 ➜ 選択されていない項目を薄くする */
+.agenda-list.is-step:has(.agenda-item.current-fragment) .agenda-item:not(.current-fragment),
+.agenda-list:has(.agenda-item.is-active) .agenda-item:not(.is-active) {
+  opacity: 0.25 !important;
+  filter: grayscale(60%);
+  transform: scale(0.98);
+}
+
+/* 今アクティブな項目 ➜ 光る＋強調＋少し拡大 */
+.agenda-list.is-step .agenda-item.current-fragment,
+.agenda-list .agenda-item.is-active {
+  opacity: 1.0 !important;
+  border-color: var(--accent) !important;
+  background: rgba(255, 230, 102, 0.3) !important;
+  box-shadow: 0 4px 20px rgba(255, 213, 0, 0.4) !important;
+  transform: scale(1.02);
+}
+
+.agenda-list.is-step .agenda-item.current-fragment .agenda-num,
+.agenda-list .agenda-item.is-active .agenda-num {
+  box-shadow: 0 0 14px var(--accent);
+  background: var(--accent);
+  color: #000000;
+}
+
+
+/* 3. 2カラムレイアウト（テキスト＋グラフ、左右比較） */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: center;
+}
+
+/* 3.5. 画像横並び専用コンテナ (2枚並列 / 3枚並列) - 透過PNG対応 */
+.images-2 {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.images-2 img,
+.images-2 .slide-img {
+  max-width: 48% !important;
+  max-height: var(--img-max-h, 340px) !important;
+  object-fit: contain;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.images-3 {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  align-items: center;
+  margin: 16px 0;
+}
+
+.images-3 img,
+.images-3 .slide-img {
+  max-width: 31% !important;
+  max-height: var(--img-max-h, 300px) !important;
+  object-fit: contain;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+
+/* 4. 3カラムレイアウト（3つのポイント・カード並び） */
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px;
+}
+
+/* 5. カード枠 ＆ カラーバリエーション */
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0px 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.card p:first-child {
+  margin-top: 6px !important;
+}
+
+.card.card-blue {
+  background: rgba(0, 43, 255, 0.08) !important;
+  border-color: rgba(0, 43, 255, 0.3) !important;
+}
+
+.card.card-red {
+  background: rgba(239, 68, 68, 0.08) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.card.card-yellow {
+  background: rgba(255, 230, 102, 0.3) !important;
+  border-color: rgba(255, 213, 0, 0.45) !important;
+}
+
+.card.card-gold {
+  background: rgba(153, 128, 0, 0.1) !important;
+  border-color: rgba(153, 128, 0, 0.35) !important;
+}
+
+
+/* 6. ポイント強調ボックス */
+.point-box {
+  background: rgba(255, 230, 102, 0.28);
+  /* 背景色: #FFE666 + アルファ */
+  border-left: 4px solid var(--accent);
+  /* 左線: #FFD500 */
+  padding: 8px 14px;
+  border-radius: 4px;
+  margin: 16px 0;
+  color: var(--text-main);
+}
+
+.point-box p {
+  margin: 0 !important;
+  line-height: 1.5 !important;
+  color: var(--text-main) !important;
+}
+
+/* 7. コントロールボタンバー (左下) */
+.slide-controls-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 18px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-btn {
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text-main);
+  border: 1px solid #cbd5e1;
+  padding: 7px 13px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  user-select: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.control-btn:hover {
+  background: var(--accent);
+  color: #000000;
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(255, 213, 0, 0.45);
+  transform: translateY(-1px);
+}
+
+
+/* タイル一覧オーバーレイ */
+#slide-tile-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(10, 15, 29, 0.94);
+  backdrop-filter: blur(16px);
+  z-index: 99999;
+  padding: 40px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+#slide-tile-modal.active {
+  display: block;
+}
+
+.tile-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 1200px;
+  margin: 0 auto 30px auto;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+}
+
+.tile-header h2 {
+  font-size: 1.5em;
+  color: var(--text-main);
+  margin: 0;
+  border: none;
+  padding: 0;
+}
+
+.tile-close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.tile-close-btn:hover {
+  background: rgba(244, 63, 94, 0.8);
+  color: #fff;
+}
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.slide-tile-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 140px;
+  position: relative;
+}
+
+.slide-tile-item:hover {
+  border-color: var(--accent);
+  background: rgba(255, 213, 0, 0.15);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.slide-tile-item.current {
+  border-color: var(--accent);
+  background: rgba(255, 213, 0, 0.25);
+  box-shadow: 0 0 12px rgba(255, 213, 0, 0.3);
+}
+
+.tile-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tile-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.tile-snippet {
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.5;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
