@@ -1,88 +1,102 @@
-# 🛠️ 開発者向け仕様書・カスタマイズマニュアル (MANUAL.md)
+# 🛠️ 開発者向け仕様書・アーキテクチャマニュアル (MANUAL.md)
 
-このドキュメントは、**`build.py` の変換パイプライン、拡張構文の正規表現ロジック、CSS・JSの構造、およびシステムの拡張方法** を解説した開発者向け仕様書です。
-
----
-
-## 1. システムアーキテクチャ概要
-
-本システムは、Markdown (`slide.md`) から **Python標準ライブラリのみ** でHTMLを生成し、Reveal.js、Plotly.js、KaTeX、Highlight.js を統合してリッチなプレゼンテーションを実現しています。
-
-```
-[ slide.md ]
-    │
-    ▼ (1) process_includes_and_images()  : ::include(...), ::video(...) 展開 & 画像/動画のBase64化(embed時)
-    ▼ (2) process_custom_containers()    : ::: 構文 (title, agenda, step, notes, point, grid) の正規表現置換
-    ▼ (3) markdown_to_html()             : テーブル、コード、見出し、リスト、太字の行単位パース
-    ▼ (4) parse_slides()                 : --- (横) および -- (縦) で <section> 分割
-    │
-    ├─► [ slide_refered.html ] (相対パス参照型 / 開発用)
-    └─► [ slide_embed.html ]   (全JS/CSS/画像を内包 / 完全配布用)
-```
+このドキュメントは、**本スライドシステムの内部構造、Reveal.jsとの役割分担、モジュール分割（`assets/py/`）、および拡張方法** を解説した開発者向け仕様書です。
 
 ---
 
-## 2. `build.py` 内部ロジック仕様
+## 1. システム概要 ＆ Reveal.js との役割分担
 
-### ① 外部インクルード & メディア処理 (`process_includes_and_images`)
-- `::include(relative_path)::` : 指定されたHTMLファイルの中身を読み込んでそのまま展開。
-- `::video(relative_path)::` : `<video class="slide-video" autoplay loop muted playsinline src="..."></video>` に展開。
-- **embed（埋込）時**: 画像（PNG/JPG/SVG/WebP）および動画（MP4/WebM）を検出し、Base64エンコードした `data:{mime};base64,...` 文字列に自動置換して完全埋め込み化。
-- **refered（参照）時**: 相対パスのまま出力。
+本システムは、世界標準のスライドフレームワーク **Reveal.js** をコアエンジンとして活用しつつ、その上に **「Markdown直感記法」「Base64完全インライン化」「Plotly 3Dグラフ自動連携」「5色デザインシステム」** を独自に構築したハイブリッドアーキテクチャです。
 
-### ② カスタムコンテナ構文 (`process_custom_containers`)
-正規表現（`re.sub`）により、以下のMarkdown拡張記法をHTMLタグへ変換しています：
+### 役割分担一覧
 
-| Markdown記法 | 変換後HTML | 役割 |
+| 機能領域 | 担当レイヤー | 詳細 |
 |---|---|---|
-| `::: title` ～ `:::` | `<div class="title-slide"> ... </div>` | 表紙中央揃えレイアウト |
-| `::: point` ～ `:::` | `<div class="point-box"> ... </div>` | 左線付きの強調ボックス |
-| `::: step` ～ `:::` | 内部の各行を `<li class="fragment">` に自動変換 | クリックごとの段階フェードイン |
-| `::: fragment` ～ `:::` | `<div class="fragment"> ... </div>` | 要素全体の段階表示 |
-| `::: grid-2` | `<div class="grid-2"><div>` | 左右2分割（左カラム開始） |
-| `::: split` | `</div><div>` | 左カラム終了 ➜ 右カラム開始 |
-| `:::` | `</div>` | コンテナの終了 |
-| `::: grid-3` | `<div class="grid-3">` | 3列グリッド |
-| `::: card` | `<div class="card">` | カード枠 |
-
-### ③ テーブルパーサー (`parse_markdown_table`)
-- `| A | B |` および `|---|---|` を検出し、セマンティックな `<table><thead><tr><th>...</th></tr></thead><tbody>...</tbody></table>` を生成。
-
-### ④ コードブロック ＆ 数式
-- ````python ... ```` ➜ `<pre><code class="language-python">...</code></pre>` を生成し、初期化時に `hljs.highlightAll()` でカラー化。
-- `$E=mc^2$` や `$$ ... $$` ➜ 初期化時に `renderMathInElement()` でKaTeXにより数式レンダリング。
-
-### ⑤ スライド分割 (`parse_slides`)
-- `\n---\n` で水平スライドを分割。
-- 水平スライド内に `\n--\n` がある場合、親 `<section>` 内に子 `<section>` をネストして **垂直スタック（縦送りスライド）** を構成。
+| **スライド実行基盤** | **Reveal.js** (オープンソース) | 2次元ページ遷移（横・縦）、キーボード・タッチ操作、16:9比率維持（スケーリング）、ハッシュURLルーティング |
+| **Markdown変換エンジン** | **自作** (`markdown_parser.py`) | `::: agenda`, `::: grid-2:1`, `::: card:blue`, `::: images-2:250`, `::: point`, `::: step` などの独自コンテナ解析 |
+| **単一ファイル配布パイプライン** | **自作** (`asset_encoder.py`) | 全CSS/JS/画像/SVGロゴ/グラフをBase64データURIに変換し、1枚の完全自己完結HTML（`slide_embed.html`）を生成 |
+| **デザインシステム** | **自作** (`theme-custom.css`) | 5色黄金比パレット（コーポレートイエロー × ロイヤルブルー）、スライド用紙内側ロゴ固定、タイル一覧モーダル |
+| **外部グラフ連携** | **自作** (`builder.py`) | `::include(charts/*.html)::` によるPlotlyの自動リサイズ・展開 |
 
 ---
 
-## 3. CSS・デザイン構造 (`assets/theme-custom.css`)
+## 2. ディレクトリ構成 ＆ モジュール責務
 
-### ① デザイントークン (`:root`)
-カラーパレットはすべて先頭の CSS 変数で一元管理されています。
-
-```css
-:root {
-  --bg-main: #0f172a;           /* 背景色 */
-  --text-main: #f8fafc;         /* メインテキスト色 */
-  --text-sub: #94a3b8;          /* 補足テキスト色 */
-  --accent: #38bdf8;            /* アクセントカラー (水色) */
-  --accent-secondary: #818cf8;  /* サブアクセント (薄紫) */
-  --border-color: rgba(255, 255, 255, 0.12); /* 枠線色 */
-  --card-bg: rgba(255, 255, 255, 0.04);      /* カード背景色 */
-}
+```text
+slide_template/
+├── build.py                  # ルートのエントリポイント (CLI引数処理)
+├── slide.md                  # スライド原稿 (Markdown)
+├── slide_refered.html        # [出力] 開発・確認用HTML (相対パス参照)
+├── slide_embed.html          # [出力] 配布・本番用HTML (完全インライン自己完結)
+│
+├── assets/
+│   ├── css/                  # CSSスタイルシート
+│   │   ├── reveal.min.css    # Reveal.js 基盤CSS
+│   │   ├── theme-custom.css  # ★ 独自デザインシステム (5色パレット・レイアウト)
+│   │   └── ...
+│   ├── js/                   # JSライブラリ群
+│   │   ├── reveal.min.js     # Reveal.js 本体
+│   │   ├── plotly.min.js     # 3D/2D インタラクティブグラフ描画
+│   │   └── ...
+│   └── py/                   # ★ ビルドシステム本体 (Pythonモジュール)
+│       ├── __init__.py       # パッケージ定義
+│       ├── config.py         # パス定数・HTML雛形テンプレート
+│       ├── markdown_parser.py# 独自記法・Markdownパーサー・スライド分割
+│       ├── asset_encoder.py  # Base64エンコード・CSS内URL置換・インクルード解決
+│       └── builder.py        # 参照型＆埋込型HTMLビルダー
+│
+├── charts/                   # 外部PlotlyグラフHTML (sample_2d.html, sample_3d.html)
+└── graph/                    # スライド用画像ファイル (PNG, JPG, SVG)
 ```
 
 ---
 
-## 4. JavaScript 連携機能
+## 3. モジュール別ロジック仕様
 
-1. **タイル一覧モーダル (`toggleTileModal()`)**
-   - DOM内のスライドを走査し、見出し・概要文を抽出してグリッドタイルを自動生成。
-   - クリックで `Reveal.slide(h, v)` によりジャンプ。`ESC` / `O` キーでトグル。
-2. **Plotly 自動リサイズ (`triggerPlotlyResize()`)**
-   - スライド遷移イベント（`slidechanged`）時に `Plotly.Plots.resize()` を発火。
-3. **KaTeX ＆ Highlight.js 初期化 (`initEnhancements()`)**
-   - スライド読み込み時に数式レンダリングとコードハイライトを一括適用。
+### ① `assets/py/markdown_parser.py`
+Markdownテキストを行単位・ブロック単位で解析し、Reveal.js用HTMLに変換します。
+
+- **`split_slides(md_text)`**:
+  - `\n---\n` ➜ 水平スライド（親 `<section>`）
+  - `\n--\n` ➜ 垂直スタック（親 `<section>` 内の子 `<section>`）
+- **`process_custom_containers(text)`**:
+  - `::: agenda[:option]` ➜ 目次生成 ＆ `fragment` による自由なハイライトシーケンス制御
+  - `::: grid-([0-9:-]+)` ➜ `grid-2`, `grid-2-1` (左2/3:右1/3), `grid-1-2` (左1/3:右2/3) への展開
+  - `::: card(?::([a-zA-Z0-9_-]+))?` ➜ `card`, `card-blue`, `card-red`, `card-yellow`, `card-gold` への展開
+  - `::: images-([23])(?::([^\n]+))?` ➜ 2枚/3枚の横並び配置 ＆ `--img-max-h` による高さ統一
+  - `::: point` ➜ `point-box`（内部にgridや画像のネストが可能）
+  - `::: step` ➜ 内部リストを `<li class="fragment">` に自動変換
+- **`markdown_to_html(md_text)`**:
+  - テーブル（`|...|`）、コードブロック（```` ``` ````）、数式（`$$...$$`）、見出し（`#`, `##`, `###`）を行単位でパース。
+
+---
+
+### ② `assets/py/asset_encoder.py`
+完全自己完結HTML（`slide_embed.html`）を生成するためのエンコーダー。
+
+- **`to_data_uri(file_path)`**:
+  - 画像やフォントファイルをバイナリ読み込みし、MIMEタイプ付きの `data:{mime};base64,...` 文字列を生成。
+- **`embed_css_urls(css_content, base_dir)`**:
+  - CSS内部の `url("./logo.svg")` などを正規表現で走査し、Base64データURIに置換。
+- **`resolve_includes(html_content, base_dir)`**:
+  - `::include(path/to/chart.html)::` を検出し、外部HTMLの中身を自動抽出して `<div class="included-chart-container">` 内に展開。
+
+---
+
+### ③ `assets/py/builder.py`
+- **`build_refered_html(slides_html)`**:
+  - 相対パス（`./assets/...`）でCSS/JSを読み込む高速HTMLを生成。
+- **`build_embed_html(slides_html)`**:
+  - 全CSS・JSを `<style>` / `<script>` でインライン展開し、全画像・グラフをBase64化して埋め込み。
+- **`build_all()`**:
+  - 上記の2系統を同時にビルドして出力。
+
+---
+
+## 4. 拡張・カスタマイズ方法
+
+### 💡 新しい独自記法（`::: xxx`）を追加したい場合
+[assets/py/markdown_parser.py](file:///c:/Users/isobe/project/html/slide_template/assets/py/markdown_parser.py) の `process_custom_containers()` 内に正規表現ルールを追加し、[assets/css/theme-custom.css](file:///c:/Users/isobe/project/html/slide_template/assets/css/theme-custom.css) にスタイルを追記します。
+
+### 💡 カラーパレットを変更したい場合
+[assets/css/theme-custom.css](file:///c:/Users/isobe/project/html/slide_template/assets/css/theme-custom.css) の `:root` 内の変数（`--accent`, `--accent-blue` など）を編集するだけで、全スライドに一括適用されます。

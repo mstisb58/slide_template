@@ -63,7 +63,12 @@ body,
 }
 
 
-.reveal .slides section:not(.stack) {
+.reveal .slides section:not(.stack),
+.reveal .slides section.stack > section {
+  height: 720px !important;
+  min-height: 720px !important;
+  top: 0 !important;
+  left: 0 !important;
   padding: 35px 55px !important;
   box-sizing: border-box !important;
 }
@@ -115,17 +120,21 @@ body.is-title-slide .slide-fixed-logo {
   /* 下の余白: 少し空ける */
 }
 
-/* h2のスタイル (各スライドのページタイトル用) */
+/* h2のスタイル (各スライドのページタイトル用: 画面右端まで横断) */
 .reveal h2 {
+  width: 100% !important;
+  display: block !important;
+  box-sizing: border-box !important;
   font-size: 1.6em !important;
   /* 文字サイズ: 大 */
   border-bottom: 2px solid var(--headbar-color);
-  /* 下線: アクセントカラーの2px実線 */
+  /* 下線: アクセントカラーの2px実線が画面端まで横断 */
   padding-bottom: 8px;
   /* 文字と下線の間の隙間 */
   margin-bottom: 24px !important;
   /* 下の本文との間の余白 */
 }
+
 
 /* h3のスタイル (カード内や小見出し用) */
 .reveal h3 {
@@ -171,6 +180,8 @@ body.is-title-slide .slide-fixed-logo {
   margin-bottom: 8px;
   /* 項目と項目の間の下の隙間 */
 }
+
+
 
 /* 太字・強調テキスト (<strong> または Markdownの **文字**) */
 .reveal strong {
@@ -426,13 +437,65 @@ body.is-title-slide .slide-fixed-logo {
 }
 
 
-/* 3. 2カラムレイアウト（テキスト＋グラフ、左右比較） */
+/* 3. 2カラムレイアウト（均等 1:1） */
 .grid-2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  align-items: center;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 24px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: var(--grid-h, auto);
+  margin: 10px 0 !important;
 }
+
+/* 3.1. 比率指定カラムレイアウト (左2:右1 / 左1:右2 / 左3:右1) */
+.grid-2-1 {
+  display: grid !important;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) !important;
+  gap: 24px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: var(--grid-h, auto);
+  margin: 10px 0 !important;
+}
+
+.grid-1-2 {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) !important;
+  gap: 24px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: var(--grid-h, auto);
+  margin: 10px 0 !important;
+}
+
+.grid-3-1 {
+  display: grid !important;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) !important;
+  gap: 24px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: var(--grid-h, auto);
+  margin: 10px 0 !important;
+}
+
+.grid-2 > div,
+.grid-2-1 > div,
+.grid-1-2 > div,
+.grid-3-1 > div {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+
 
 /* 3.5. 画像横並び専用コンテナ (2枚並列 / 3枚並列) - 透過PNG対応 */
 .images-2 {
@@ -474,12 +537,70 @@ body.is-title-slide .slide-fixed-logo {
 }
 
 
-/* 4. 3カラムレイアウト（3つのポイント・カード並び） */
+/* 4. 3カラムレイアウト（3つの箱を横に均等分割し、高さはサブパラメータで指定可能） */
 .grid-3 {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 20px;
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 16px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  height: var(--grid-h, auto);
+  margin: 10px 0 !important;
 }
+
+.grid-3 > div,
+.grid-3 > * {
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  height: 100% !important;
+}
+
+/* 埋め込みインタラクティブグラフ (Plotly) の自動フィット ＆ スクロールバー完全非表示 */
+.included-chart-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: var(--grid-h, 100%) !important;
+  min-height: 200px !important;
+  position: relative !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.included-chart-container *::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.included-chart-container .plotly-graph-div,
+.included-chart-container .js-plotly-plot {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 100% !important;
+  position: relative !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* 5. カード枠 ＆ カラーバリエーション */
 .card {
@@ -532,6 +653,8 @@ body.is-title-slide .slide-fixed-logo {
   line-height: 1.5 !important;
   color: var(--text-main) !important;
 }
+
+
 
 /* 7. コントロールボタンバー (左下) */
 .slide-controls-bar {
