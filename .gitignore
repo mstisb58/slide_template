@@ -11,4 +11,5 @@ __pycache__/
 Thumbs.db
 *.swp
 .vscode/
-
+# Jupyter
+.ipynb_checkpoints/

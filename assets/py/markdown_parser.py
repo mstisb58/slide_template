@@ -34,8 +34,6 @@ def _parse_paren_args(raw: str) -> tuple[list[str], dict[str, str]]:
 def _parse_agenda(text: str) -> str:
     def replace_agenda(match):
         raw_opt = match.group(1) or match.group(2) or ""
-        pos, kwargs = _parse_paren_args(raw_opt)
-        spec = (pos[0] if pos else kwargs.get("highlight", "")).strip().lower()
         items_raw = match.group(3).strip().split("\n")
 
         valid_items = []
@@ -45,68 +43,68 @@ def _parse_agenda(text: str) -> str:
                 valid_items.append(cleaned)
 
         total_items = len(valid_items)
-        fragment_order = {}
-        fixed_active = None
-        is_step = False
-
-        if not spec or spec in ("auto", "all", "step"):
-            is_step = True
-            for i in range(1, total_items + 1):
-                fragment_order[i] = i
-        elif spec in ("none", "off"):
-            is_step = False
-        elif spec.startswith("fixed"):
-            target_num = spec.replace("fixed", "").replace(":", "").replace("=", "").strip()
-            if target_num.isdigit():
-                fixed_active = int(target_num)
-        elif "," in spec or "->" in spec:
-            is_step = True
-            parts = re.split(r"[,->]+", spec)
-            step_idx = 1
-            for p in parts:
-                p = p.strip()
-                if p.isdigit():
-                    idx = int(p)
-                    if 1 <= idx <= total_items:
-                        fragment_order[idx] = step_idx
-                        step_idx += 1
-        elif spec.isdigit():
-            is_step = True
-            target = int(spec)
-            if 1 <= target <= total_items:
-                fragment_order[target] = 1
+        steps = []
+        
+        # JSON形式の拡張設定をチェック
+        raw_opt_clean = raw_opt.strip("'\" \t\r\n")
+        if raw_opt_clean.startswith("{") and raw_opt_clean.endswith("}"):
+            try:
+                import json
+                data = json.loads(raw_opt_clean)
+                steps = data.get("steps", [])
+            except Exception:
+                pass
         else:
-            is_step = True
-            for i in range(1, total_items + 1):
-                fragment_order[i] = i
+            # 従来の文字列形式 (1->5, fixed=1, 等) の互換処理
+            pos, kwargs = _parse_paren_args(raw_opt)
+            spec = (pos[0] if pos else kwargs.get("highlight", "")).strip().lower()
+            
+            if not spec or spec in ("auto", "all", "step"):
+                steps = [[i] for i in range(total_items)]
+            elif spec in ("none", "off"):
+                steps = []
+            elif spec.startswith("fixed"):
+                target_num = spec.replace("fixed", "").replace(":", "").replace("=", "").strip()
+                if target_num.isdigit():
+                    v = int(target_num)
+                    steps = [[v - 1 if v > 0 else 0]]
+            elif "," in spec or "->" in spec:
+                parts = re.split(r"[,->]+", spec)
+                for p in parts:
+                    p = p.strip()
+                    if p.isdigit():
+                        idx = int(p)
+                        if 1 <= idx <= total_items:
+                            steps.append([idx - 1])
+            elif spec.isdigit():
+                target = int(spec)
+                if 1 <= target <= total_items:
+                    steps.append([target - 1])
 
-        container_classes = ["agenda-list"]
-        if is_step:
-            container_classes.append("is-step")
+        # stepsが空でアイテムがある場合はデフォルトで順次ハイライト
+        if not steps and valid_items:
+            steps = [[i] for i in range(total_items)]
 
-        agenda_html = [f'<div class="{" ".join(container_classes)}">']
-        for idx, item_text in enumerate(valid_items, start=1):
-            item_classes = ["agenda-item"]
-            item_attrs = []
-
-            if fixed_active is not None:
-                if idx == fixed_active:
-                    item_classes.append("active-fixed")
-                else:
-                    item_classes.append("dimmed")
-            elif is_step and idx in fragment_order:
-                item_classes.append("fragment")
-                item_classes.append("fade-in-highlight")
-                item_attrs.append(f'data-fragment-index="{fragment_order[idx]}"')
-
-            attr_str = f' {" ".join(item_attrs)}' if item_attrs else ""
-            agenda_html.append(f'  <div class="{" ".join(item_classes)}"{attr_str}>')
-            agenda_html.append(f'    <span class="agenda-num">{idx:02d}</span>')
+        initial_actives = set(steps[0]) if steps else set()
+        
+        import json
+        steps_json = json.dumps(steps)
+        agenda_html = [f'<div class="agenda-list" data-agenda-steps=\'{steps_json}\'>']
+        
+        for idx, item_text in enumerate(valid_items):
+            cls = "agenda-item is-active" if idx in initial_actives else "agenda-item dimmed"
+            agenda_html.append(f'  <div class="{cls}" data-agenda-index="{idx}">')
+            agenda_html.append(f'    <span class="agenda-num">{idx + 1:02d}</span>')
             agenda_html.append(f'    <span>{item_text}</span></div>')
         agenda_html.append('</div>')
+
+        # ステップトリガー
+        for s_idx in range(1, len(steps)):
+            agenda_html.append(f'<div class="agenda-step-trigger fragment" data-fragment-index="{s_idx}"></div>')
+
         return "\n".join(agenda_html)
 
-    return re.sub(r":::\s*agenda(?:\(([^)\n]+)\)|:([^\n]+))?\s*\n(.*?)\n:::", replace_agenda, text, flags=re.DOTALL)
+    return re.sub(r":::\s*agenda(?:\(([^)\n]*)\)|:([^\n]+))?\s*\n(.*?)\n:::", replace_agenda, text, flags=re.DOTALL)
 
 
 def _parse_images(text: str) -> str:

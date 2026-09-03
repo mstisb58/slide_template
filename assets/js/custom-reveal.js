@@ -98,16 +98,53 @@ function updateSlideState() {
   document.body.classList.toggle('is-title-slide', isTitle);
 }
 
+function updateAgendaSteps(scopeEl) {
+  var root = scopeEl || document;
+  var container = root.querySelector('.agenda-list[data-agenda-steps]');
+  if (!container) return;
+  var raw = container.getAttribute('data-agenda-steps');
+  if (!raw) return;
+  try {
+    var steps = JSON.parse(raw);
+    if (!steps || !steps.length) return;
+    var section = container.closest('section');
+    if (!section) return;
+    var visibleTriggers = section.querySelectorAll('.agenda-step-trigger.visible');
+    var stepIdx = visibleTriggers.length;
+    if (stepIdx >= steps.length) stepIdx = steps.length - 1;
+    var activeIndices = steps[stepIdx] || [];
+    var items = container.querySelectorAll('.agenda-item');
+    items.forEach(function(item, idx) {
+      if (activeIndices.indexOf(idx) !== -1) {
+        item.classList.add('is-active');
+        item.classList.remove('dimmed');
+      } else {
+        item.classList.remove('is-active');
+        item.classList.add('dimmed');
+      }
+    });
+  } catch(e) {}
+}
+
 Reveal.on('ready', function(event) {
   initEnhancements();
   updateSlideState();
+  updateAgendaSteps(event.currentSlide);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 100);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 500); // 念のため
 });
 
 Reveal.on('slidechanged', function(event) {
   updateSlideState();
-  // スライドが表示され、DOMのサイズ計算が終わるのを少し待ってから実行
+  updateAgendaSteps(event.currentSlide);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 100);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 500);
+});
+
+Reveal.on('fragmentshown', function(event) {
+  updateAgendaSteps(Reveal.getCurrentSlide());
+});
+
+Reveal.on('fragmenthidden', function(event) {
+  updateAgendaSteps(Reveal.getCurrentSlide());
 });
