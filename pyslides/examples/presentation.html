@@ -1,3 +1,12 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Pyslides Demo</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reset.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/theme/white.css">
+    <style>
 /* ==========================================================================
    スライド用カスタムテーマ
    ========================================================================== */
@@ -1055,3 +1064,43 @@ body.is-title-slide .slide-fixed-logo {
 .layout-summary .summary-card li {
   margin-bottom: 6px;
 }
+</style>
+    
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+            <section>
+<h1>pyslidesの紹介</h1>
+<h3>AI Assistant</h3>
+</section>
+<section>
+<div class="custom-grid" style="grid-template-columns: 2fr 3fr; grid-template-rows: repeat(1, minmax(0, 1fr)); gap: 16px;">
+<div class="grid-cell">
+<h2>Plotly グラフの直接埋め込み</h2>
+<ul>
+  <li>ファイル保存は不要です<div class="list-subtext">- メモリ上の <code>fig</code> オブジェクトを代入するだけ - グリッドの比率指定も <code>col="2:3"</code> のように可能</div></li>
+</ul>
+</div>
+<div class="grid-cell">
+<p>{{CHART:chart_22cb359e}}</p>
+</div>
+</div>
+</section>
+
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/reveal.js/4.3.1/reveal.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            slideNumber: true,
+            width: 1050,
+            height: 700,
+            margin: 0.1,
+            minScale: 0.2,
+            maxScale: 2.0
+        });
+    </script>
+</body>
+</html>
