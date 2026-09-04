@@ -6,6 +6,44 @@ import tempfile
 from pathlib import Path
 from fontTools.subset import main as fonttools_subset
 
+def find_default_font_path() -> str:
+    """
+    システムにインストールされている標準的な日本語ゴシックフォントのパスを自動探索して返す。
+    見つからなかった場合は None を返す。
+    """
+    import platform
+    system = platform.system()
+    
+    candidates = []
+    if system == 'Windows':
+        font_dir = Path('C:/Windows/Fonts')
+        candidates = [
+            font_dir / 'BIZ-UDPGothic.ttc',
+            font_dir / 'bizudpgothic.ttc',
+            font_dir / 'BIZ-UDGothicR.ttc',
+            font_dir / 'yuGothR.ttc',      # 游ゴシック Regular
+            font_dir / 'msgothic.ttc',     # MSゴシック
+            font_dir / 'meiryo.ttc'        # メイリオ
+        ]
+    elif system == 'Darwin': # Mac
+        candidates = [
+            Path('/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc'),
+            Path('/System/Library/Fonts/Hiragino Sans W3.ttc'),
+            Path('/Library/Fonts/BIZUDPGothic-Regular.ttf')
+        ]
+    elif system == 'Linux':
+        candidates = [
+            Path('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'),
+            Path('/usr/share/fonts/noto/NotoSansCJK-Regular.ttc'),
+            Path('/usr/share/fonts/truetype/fonts-japanese-gothic.ttf')
+        ]
+        
+    for p in candidates:
+        if p.exists():
+            return str(p)
+            
+    return None
+
 def extract_unique_chars(html_str: str) -> str:
     """
     HTML文字列からテキスト部分だけを抽出し、ユニークな文字の文字列を返す。

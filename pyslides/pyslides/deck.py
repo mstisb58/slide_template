@@ -94,12 +94,18 @@ class Deck:
         subset_font_css = ""
         if font_embed:
             if not font_path:
-                print("Warning: font_embed=True was specified, but font_path is missing. Skipping font subsetting.")
-            else:
+                from .font_subsetter import find_default_font_path
+                font_path = find_default_font_path()
+                if not font_path:
+                    print("Warning: font_embed=True was specified, but font_path is missing and no default system font could be found. Skipping font subsetting.")
+                else:
+                    print(f"Auto-discovered system font for subsetting: {font_path}")
+            
+            if font_path:
                 from .font_subsetter import generate_subset
                 b64_font = generate_subset(font_path, slides_str, output_path=None)
-            if b64_font:
-                subset_font_css = f"""<style>
+                if b64_font:
+                    subset_font_css = f"""<style>
 @font-face {{
     font-family: 'SubsetFont';
     src: url('{b64_font}') format('woff2');
@@ -213,13 +219,19 @@ class Deck:
             subset_font_css = ""
             if font_embed:
                 if not font_path:
-                    print("Warning: font_embed=True was specified, but font_path is missing. Skipping font subsetting.")
-                else:
+                    from .font_subsetter import find_default_font_path
+                    font_path = find_default_font_path()
+                    if not font_path:
+                        print("Warning: font_embed=True was specified, but no system font could be found. Skipping font subsetting.")
+                    else:
+                        print(f"Auto-discovered system font for subsetting: {font_path}")
+                
+                if font_path:
                     from .font_subsetter import generate_subset
                     font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
                     saved_path = generate_subset(font_path, slides_str, output_path=font_out_path)
-                if saved_path:
-                    subset_font_css = f"""<style>
+                    if saved_path:
+                        subset_font_css = f"""<style>
 @font-face {{
     font-family: 'SubsetFont';
     src: url('assets/fonts/subset.woff2') format('woff2');
