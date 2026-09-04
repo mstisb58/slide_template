@@ -66,7 +66,7 @@ class Deck:
             self._slides.append(s)
         return self
         
-    def to_html(self, output_path: str, embed: bool = True, font_embed: bool = False, font_path: str = None):
+    def to_html(self, output_path: str, embed: bool = True, font_embed: bool = False):
         from .renderer import render_slide_html
         from .builder import build_full_html
         
@@ -93,26 +93,21 @@ class Deck:
 
         subset_font_css = ""
         if font_embed:
-            if not font_path:
-                from .font_subsetter import find_default_font_path
-                font_path = find_default_font_path()
-                if not font_path:
-                    print("Warning: font_embed=True was specified, but font_path is missing and no default system font could be found. Skipping font subsetting.")
-                else:
-                    print(f"Auto-discovered system font for subsetting: {font_path}")
-            
-            if font_path:
-                from .font_subsetter import generate_subset
-                b64_font = generate_subset(font_path, slides_str, output_path=None)
-                if b64_font:
-                    subset_font_css = f"""<style>
+            from .font_subsetter import find_font_for_css, generate_subset
+            font_file, font_number, font_name = find_font_for_css(style_paths)
+            if not font_file:
+                raise RuntimeError(
+                    "font_embed=True: CSSの --font-main に指定されたフォントがこのPCに見つかりません。"
+                    "フォントをインストールするか、font_embed=False で出力してください。"
+                )
+            print(f"Font subsetting: '{font_name}' (from {font_file}, index={font_number})")
+            b64_font = generate_subset(font_file, font_number, slides_str, output_path=None)
+            if b64_font:
+                subset_font_css = f"""<style>
 @font-face {{
-    font-family: 'SubsetFont';
+    font-family: '{font_name}';
     src: url('{b64_font}') format('woff2');
     font-display: swap;
-}}
-:root {{
-    --font-main: 'SubsetFont', "BIZ UDPGothic", -apple-system, sans-serif !important;
 }}
 </style>"""
         
@@ -178,7 +173,7 @@ class Deck:
             
         display(IFrame(src=f"./{temp_file}", width="100%", height=height))
 
-    def to_zip(self, zip_path: str, font_embed: bool = False, font_path: str = None):
+    def to_zip(self, zip_path: str, font_embed: bool = False):
         """
         プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
         HTML 単体ではなく、画像や CSS/JS などの依存ファイルが 'assets/' や 'media/' ディレクトリとして構造化された状態で ZIP に含まれます。
@@ -218,27 +213,21 @@ class Deck:
                         
             subset_font_css = ""
             if font_embed:
-                if not font_path:
-                    from .font_subsetter import find_default_font_path
-                    font_path = find_default_font_path()
-                    if not font_path:
-                        print("Warning: font_embed=True was specified, but no system font could be found. Skipping font subsetting.")
-                    else:
-                        print(f"Auto-discovered system font for subsetting: {font_path}")
-                
-                if font_path:
-                    from .font_subsetter import generate_subset
-                    font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
-                    saved_path = generate_subset(font_path, slides_str, output_path=font_out_path)
-                    if saved_path:
-                        subset_font_css = f"""<style>
+                from .font_subsetter import find_font_for_css, generate_subset
+                font_file, font_number, font_name = find_font_for_css(style_paths)
+                if not font_file:
+                    raise RuntimeError(
+                        "font_embed=True: CSSの --font-main に指定されたフォントがこのPCに見つかりません。"
+                        "フォントをインストールするか、font_embed=False で出力してください。"
+                    )
+                print(f"Font subsetting: '{font_name}' (from {font_file}, index={font_number})")
+                font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
+                generate_subset(font_file, font_number, slides_str, output_path=font_out_path)
+                subset_font_css = f"""<style>
 @font-face {{
-    font-family: 'SubsetFont';
+    font-family: '{font_name}';
     src: url('assets/fonts/subset.woff2') format('woff2');
     font-display: swap;
-}}
-:root {{
-    --font-main: 'SubsetFont', "BIZ UDPGothic", -apple-system, sans-serif !important;
 }}
 </style>"""
 
