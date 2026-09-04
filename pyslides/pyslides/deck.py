@@ -140,16 +140,16 @@ class Deck:
             custom_style_paths=style_paths
         )
 
-        import uuid
         import os
-        from IPython.display import display, IFrame, HTML
+        from IPython.display import display, IFrame
         
-        # URLの長さ上限を回避するため、一時ファイルまたはsrcdocを使用する
-        # 環境によってはローカルファイル参照がブロックされるため、HTML().srcdoc を使用するのが最も安全
-        import html
-        escaped_html = html.escape(preview_html)
-        iframe_html = f'<iframe srcdoc="{escaped_html}" width="100%" height="{height}px" style="border:none;" allowfullscreen></iframe>'
-        display(HTML(iframe_html))
+        # URL長制限やIPythonのセキュリティ制限（srcdocブロック）を回避するため、
+        # カレントディレクトリに一時的なHTMLファイルを作成して IFrame で読み込む
+        temp_file = "preview_temp.html"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(preview_html)
+            
+        display(IFrame(src=f"./{temp_file}", width="100%", height=height))
 
     def export_zip(self, zip_path: str):
         """
