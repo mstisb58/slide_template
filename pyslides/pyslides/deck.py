@@ -66,7 +66,7 @@ class Deck:
             self._slides.append(s)
         return self
         
-    def to_html(self, output_path: str, embed: bool = True, font_embed: bool = False):
+    def to_html(self, output_path: str, embed: bool = True, font_embed: bool = True):
         from .renderer import render_slide_html
         from .builder import build_full_html
         
@@ -173,7 +173,7 @@ class Deck:
             
         display(IFrame(src=f"./{temp_file}", width="100%", height=height))
 
-    def to_zip(self, zip_path: str, font_embed: bool = False):
+    def to_zip(self, zip_path: str, font_embed: bool = True):
         """
         プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
         HTML 単体ではなく、画像や CSS/JS などの依存ファイルが 'assets/' や 'media/' ディレクトリとして構造化された状態で ZIP に含まれます。
