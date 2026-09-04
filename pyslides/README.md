@@ -38,76 +38,98 @@ from pyslides import Slide, Deck, Chart
 
 ## クイックスタート
 
-### 1. スライドを個別に作成する
+### 1. テンプレートファクトリの準備
 
-各スライドは `Deck` に依存せず、独立して作成・プレビューできます。
+まず、CSSテーマとデザイン属性を管理する `SlideFactory` を作成します。スライドはこのファクトリから生成します。
 
 ```python
-from pyslides import Slide
+import sys
+sys.path.insert(0, "pyslides")
+from pyslides import Deck, SlideFactory
 
+# テーマごとのファクトリを作成
+factory = SlideFactory(style="assets/css/theme-custom.css", theme_name="kracie")
+```
+
+### 2. スライドを個別に作成し、要素を拡張する
+
+```python
 # --- スライド1: タイトル ---
-s1 = Slide(template="title", title="NIR-HSIを用いた毛髪診断システムの開発")
-s1.date = "2026-09-03"
-s1.subtitle = "データサイエンスでひも解く漢方と毛髪の関係"
+s1 = factory.create_slide(template="title", title="NIR-HSIを用いた毛髪診断システムの開発")
 s1.author = "礒辺 真人\nクラシエ薬品株式会社"
 s1.show()  # Jupyter Notebook上で単体プレビュー！
 
 # --- スライド2: アジェンダ（目次） ---
-s2 = Slide(template="agenda", title="目次")
-s2.items = [
-    "背景と課題",
-    "漢方体質アンケート",
-    "アンケート結果解析",
-    "毛髪と漢方体質",
-    "今後の展望"
-]
-# アニメーション順序を 0-indexed で指定
-s2.highlight_order = ("all", 0, 1, [1, 2], "none")
+s2 = factory.create_slide(
+    template="agenda",
+    title="目次",
+    # 辞書の key が左の丸（バッジ）に表示され、highlight の指定キーにもなります
+    item={
+        "01": "背景と課題",
+        "02": "漢方体質アンケート",
+        "03": "毛髪と漢方体質",
+        "04": "今後の展望"
+    },
+    # キー（"01"など）やキーワード（"none", "gray", "all"）で指定可能
+    # リストで渡すとステップアニメーション（例: 通常表示 → 01をハイライト）
+    highlight=["none", "01"]
+)
 s2.show()
 
-# --- スライド3: 通常スライド（コンポーザブル・グリッド） ---
-s3 = Slide(template="default", title="背景：漢方体質とは？気血水の基本概念")
+# --- スライド3: Pythonネイティブなグリッド＆カード構成 ---
+s3 = factory.create_slide(title="背景：漢方体質とは？気血水の基本概念")
 s3.add_markdown("漢方医学では、人体は**「気」「血」「水」**の3要素がバランスよく巡ることで健康が保たれると考えられている。")
 
-# 3分割グリッド (均等3分割)
-g = s3.add_grid(col=3)
-g[0].add_card(color="yellow").add_markdown("""**気：生命エネルギー・代謝**
+# 3分割グリッドを作成
+s3_g = s3.add_grid(col=3)
+
+# セル0: yellowカードを作成し、カード内に要素を追加
+s3_g[0].add_card(color="yellow")
+s3_g[0].card.add_markdown("""
+**気：生命エネルギー・代謝**
 自律神経系や代謝を司る活力
-- **気虚**: エネルギー不足
-- **気滞**: 気の滞り""")
+- **気虚**: エネルギー不足・疲労・胃腸虚弱
+- **気滞**: 気の滞り・抑うつ・膨満感
+- **気逆**: 気の逆流・のぼせ・動悸
+""")
+# 必要に応じてカード内に画像も追加可能: s3_g[0].card.add_image(pil_img)
+# カードの下に注釈を追加することも可能: s3_g[0].add_markdown("カード下の注釈")
 
-g[1].add_card(color="red").add_markdown("""**血：血液・ホルモン・栄養**
+# セル1: redカード
+s3_g[1].add_card(color="red")
+s3_g[1].card.add_markdown("""
+**血：血液・ホルモン・栄養**
 全身に酸素や栄養を届ける働き
-- **血虚**: 栄養不足
-- **瘀血**: 血行不良""")
+- **血虚**: 栄養不足・肌荒れ・貧血
+- **瘀血**: 血行不良・冷えのぼせ
+""")
 
-g[2].add_card(color="blue").add_markdown("""**水：体液・リンパ・水分代謝**
+# セル2: blueカード
+s3_g[2].add_card(color="blue")
+s3_g[2].card.add_markdown("""
+**水：体液・リンパ・水分代謝**
 血液以外の水分や分泌液
-- **水滞 / 水毒**: 水分代謝異常""")
+- **水滞 / 水毒**: 水分代謝異常・むくみ・めまい・頭重感
+""")
 
-# 下部の考察メモ
-s3.add_memo("日本独自の発展（古方派）：病態をシンプルに捉える指標として発展・体系化。")
+# スライド最下部にメモ（注釈ボックス）を追加
+s3.add_memo("**日本独自の発展（古方派）**：中国の思弁的な理論に対し、日本の江戸時代（吉益東洞ら）の実証的な漢方医学において、病態をシンプルに捉える指標として発展・体系化。")
+
 s3.show()
 ```
 
 ---
 
-### 2. スライドを束ねて全体出力・プレビューする
+### 3. スライドを束ねて全体出力・プレビューする
 
 作成したスライドは、リストで `Deck` に渡すだけで順序の入れ替えや不要スライドのカットが自由自在に行えます。
 
 ```python
 from pyslides import Deck
 
-# スライドリストを渡して初期化
-deck = Deck(
-    slides=[s1, s2, s3],
-    title="毛髪診断システム発表資料",
-    style="assets/css/theme-custom.css"  # 追加カスタムCSS（任意）
-)
-
-# 順序の入れ替えもリスト操作で一発
-deck.slides = [s1, s2, s3]
+# Deckを作成し、スライドを結合
+deck = Deck(title="毛髪診断システム発表資料")
+deck.join([s1, s2, s3])
 
 # 全体プレゼンテーションをノートブック内でプレビュー
 deck.show()
@@ -146,30 +168,26 @@ g[0].add_image("graph/cube.png", height="280px")
 g[1].add_image(img_path="graph/taishitu.png", caption="漢方体質分類図")
 ```
 
-- **パラメータ**:
-  - `template`: スライドレイアウトの種類（`"title"`, `"agenda"`, `"default"`, `"chart-focus"`, `"compare-3"` 等）
-  - `title`: スライドの見出し
-  - `subtitle`, `date`, `author`: タイトルスライド専用属性
-- **プロパティ**:
-  - `items`: アジェンダスライドの項目リスト（`list[str]`）
-  - `highlight_order`: アジェンダのステップ遷移順序（タプル推奨）
-  - `markdown`: 自由記述テキストの追加
-  - `chart`: Plotly `Figure` オブジェクトの埋め込み
-- **メソッド**:
-  - `show(height=520)`: ノートブック上にこのスライド単体をプレビュー表示
+### `SlideFactory(style, theme_name)`
+デザインテーマを管理し、スライドを生成するファクトリクラスです。
 
-#### `highlight_order` の仕様
-アジェンダの各遷移ステップをタプルで定義します：
-- `"all"`: すべての項目をアクティブ表示（デフォルト）
-- `"none"`: すべての項目をダークアウト（非アクティブ化）
-- `0`, `1`, `2`, ...: 指定したインデックス（0番目始まり）の項目のみをハイライト
-- `[0, 1]`, `[1, 3]`: 複数項目を同時にハイライト
+- **メソッド**:
+  - `create_slide(template="default", **kwargs)`: 指定されたテンプレートと属性を持つ `Slide` インスタンスを生成します。
+
+### スライド拡張 API (`Slide` / `Container`)
+`SlideFactory` で作成されたスライドには、後から動的に様々な要素を追加できます。
+
+- `add_markdown(text)`: マークダウン形式のテキストを追加
+- `add_grid(col=2, row=1)`: グリッドコンテナを追加し、要素を分割配置
+- `add_chart(fig)` / `add_graph(fig)`: Plotly等のグラフオブジェクトを追加
+- `add_image(path)`: 組み込みの画像を追加
 
 ```python
-s2.highlight_order = ("all", 0, 1, 2, [1, 3], "none")
+# タイトルスライドであっても後から自由に要素を足すことが可能
+g = s1.add_grid(col=2)
+g[0].add_markdown("左カラム")
+g[1].add_markdown("右カラム")
 ```
-
----
 
 ### `Deck(slides=None, title="...", style=None)`
 プレゼンテーション全体を統括・出力するコンテナクラス。

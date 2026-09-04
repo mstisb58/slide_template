@@ -42,9 +42,9 @@ def get_inlined_assets(assets_dir: Path) -> dict:
         if cf.exists():
             with open(cf, "r", encoding="utf-8") as f:
                 content = f.read()
-                # CSS内の url("./logo.svg") を Base64 に置換
+                # CSS内の url("./logo.svg") や url("logo.svg") を Base64 に置換
                 if logo_data_uri:
-                    content = re.sub(r'url\(["\']?\./logo\.svg["\']?\)', f'url("{logo_data_uri}")', content)
+                    content = re.sub(r'url\(["\']?\.?/?logo\.svg["\']?\)', f'url("{logo_data_uri}")', content)
                 css_blocks.append(content)
 
     inlined_css = "\n\n".join(css_blocks)
@@ -58,6 +58,7 @@ def get_inlined_assets(assets_dir: Path) -> dict:
 
     return {
         "css": inlined_css,
+        "logo_data_uri": logo_data_uri,
         "plotly_js": read_js_content(js_dir / "plotly.min.js"),
         "katex_js": read_js_content(js_dir / "katex.min.js"),
         "katex_auto_js": read_js_content(js_dir / "katex-auto.min.js"),

@@ -12,8 +12,25 @@ def format_inline_markdown(text: str) -> str:
     if not text:
         return ""
 
-    # ::: card(color) や ::: memo のような過去の記法が混ざっていた場合の除去／置換
+    # ::: point ... ::: の変換
+    def replace_point(match):
+        inner = match.group(1).strip()
+        formatted = format_inline_markdown(inner)
+        return f'<div class="point-box">\n{formatted}\n</div>'
+
+    text = re.sub(r":::\s*point\s*\n(.*?)\n:::", replace_point, text, flags=re.DOTALL)
+
+    # ::: memo ... ::: の変換
+    def replace_memo(match):
+        inner = match.group(1).strip()
+        formatted = format_inline_markdown(inner)
+        return f'<div class="layout-memo">\n{formatted}\n</div>'
+
+    text = re.sub(r":::\s*memo\s*\n(.*?)\n:::", replace_memo, text, flags=re.DOTALL)
+
+    # 単独の残余コロン記法を除去
     text = re.sub(r"^:::\s*card(?:\(([^)\n]+)\)|:([^\n]+))?\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^:::\s*point\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^:::\s*memo\s*", "", text, flags=re.MULTILINE)
     text = re.sub(r"^:::\s*$", "", text, flags=re.MULTILINE).strip()
 
@@ -22,28 +39,133 @@ def format_inline_markdown(text: str) -> str:
     # イタリック *text*
     text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
 
+    # マークダウン表 (| a | b |) の変換
+    def parse_tables(raw_text: str) -> str:
+        lines = raw_text.split("\n")
+        new_lines = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            if "|" in stripped and i + 1 < len(lines):
+                next_stripped = lines[i+1].strip()
+                sep_cells = [c.strip() for c in next_stripped.split("|")]
+                sep_cells = [c for c in sep_cells if c]
+                is_sep = len(sep_cells) > 0 and all(re.match(r"^:?-+:?$", c) for c in sep_cells)
+                
+                if is_sep:
+                    alignments = []
+                    for sc in sep_cells:
+                        if sc.startswith(":") and sc.endswith(":"):
+                            alignments.append(' style="text-align: center;"')
+                        elif sc.endswith(":"):
+                            alignments.append(' style="text-align: right;"')
+                        elif sc.startswith(":"):
+                            alignments.append(' style="text-align: left;"')
+                        else:
+                            alignments.append('')
+
+                    header_raw = [c.strip() for c in stripped.split("|")]
+                    if stripped.startswith("|"):
+                        header_raw = header_raw[1:]
+                    if stripped.endswith("|"):
+                        header_raw = header_raw[:-1]
+
+                    table_html = ['<table class="slide-table">', '  <thead>', '    <tr>']
+                    for idx, hc in enumerate(header_raw):
+                        align = alignments[idx] if idx < len(alignments) else ''
+                        table_html.append(f'      <th{align}>{hc}</th>')
+                    table_html.extend(['    </tr>', '  </thead>', '  <tbody>'])
+
+                    i += 2
+                    while i < len(lines):
+                        row_line = lines[i].strip()
+                        if not row_line or "|" not in row_line:
+                            break
+                        row_raw = [c.strip() for c in row_line.split("|")]
+                        if row_line.startswith("|"):
+                            row_raw = row_raw[1:]
+                        if row_line.endswith("|"):
+                            row_raw = row_raw[:-1]
+                        
+                        table_html.append('    <tr>')
+                        for idx, rc in enumerate(row_raw):
+                            align = alignments[idx] if idx < len(alignments) else ''
+                            table_html.append(f'      <td{align}>{rc}</td>')
+                        table_html.append('    </tr>')
+                        i += 1
+                    
+                    table_html.extend(['  </tbody>', '</table>'])
+                    new_lines.append("\n".join(table_html))
+                    continue
+
+            new_lines.append(line)
+            i += 1
+
+        return "\n".join(new_lines)
+
+    text = parse_tables(text)
+
     lines = text.split("\n")
     out_chunks = []
-    in_list = False
+    current_list = []
+
+    def flush_list():
+        if not current_list:
+            return
+        out_chunks.append("<ul>")
+        for item in current_list:
+            content = item['header']
+            if item['body']:
+                body_html = "<br>".join(item['body'])
+                content = f"{content}<br><span class=\"list-body\">{body_html}</span>"
+            if item.get('subitems'):
+                sub_html = "<ul>" + "".join(f"<li>{s}</li>" for s in item['subitems']) + "</ul>"
+                content = f"{content}\n{sub_html}"
+            out_chunks.append(f"  <li>{content}</li>")
+        out_chunks.append("</ul>")
+        current_list.clear()
+
+    block_html_prefixes = ("<div", "</div", "<table", "</table", "<thead", "</thead", "<tbody", "</tbody", "<tr", "</tr", "<th", "</th", "<td", "</td")
 
     for line in lines:
         stripped = line.strip()
+        if not stripped:
+            continue
+
+        # すでにブロックHTMLの場合はそのまま出力
+        if any(stripped.startswith(prefix) for prefix in block_html_prefixes):
+            flush_list()
+            out_chunks.append(stripped)
+            continue
+
+        # インデント文字数の計算（タブはスペース4つ換算）
+        expanded_line = line.expandtabs(4)
+        indent = len(expanded_line) - len(expanded_line.lstrip(' '))
+
         # 箇条書き (- item または * item)
-        if stripped.startswith("- ") or stripped.startswith("* "):
-            if not in_list:
-                out_chunks.append("<ul>")
-                in_list = True
-            item_text = stripped[2:].strip()
-            out_chunks.append(f"  <li>{item_text}</li>")
+        match_bullet = re.match(r'^(\s*)[-*]\s+(.*)$', line)
+        if match_bullet:
+            bullet_indent = len(match_bullet.group(1).expandtabs(4))
+            bullet_text = match_bullet.group(2).strip()
+
+            if bullet_indent >= 2 and current_list:
+                # ネストされたサブ箇条書き
+                current_list[-1].setdefault('subitems', []).append(bullet_text)
+            else:
+                # 第一レベルの箇条書き
+                current_list.append({'header': bullet_text, 'body': [], 'subitems': []})
         else:
-            if in_list:
-                out_chunks.append("</ul>")
-                in_list = False
-            if stripped:
+            # 箇条書き記号がない行
+            if current_list and indent >= 2:
+                # インデントされている場合 -> 直前の箇条書き項目の内部要素（本文）
+                current_list[-1]['body'].append(stripped)
+            else:
+                # インデントがない場合 -> リストを終了し、独立した段落 <p>
+                flush_list()
                 out_chunks.append(f"<p>{stripped}</p>")
 
-    if in_list:
-        out_chunks.append("</ul>")
+    flush_list()
 
     return "\n".join(out_chunks)
 
@@ -66,9 +188,19 @@ def to_graph_html(obj) -> str:
     if "plotly" in mod and hasattr(obj, "to_html"):
         div_id = "chart_" + uuid.uuid4().hex[:8]
         try:
-            return obj.to_html(full_html=False, include_plotlyjs=False, div_id=div_id)
+            return obj.to_html(
+                full_html=False,
+                include_plotlyjs=False,
+                div_id=div_id,
+                default_height="100%",
+                default_width="100%",
+                config={"responsive": True}
+            )
         except Exception:
-            pass
+            try:
+                return obj.to_html(full_html=False, include_plotlyjs=False, div_id=div_id)
+            except Exception:
+                pass
 
     # 2. Matplotlib / Seaborn Figure
     if hasattr(obj, "savefig"):
@@ -95,23 +227,6 @@ def to_graph_html(obj) -> str:
             return obj._repr_html_()
         except Exception:
             pass
-
-    # 5. 文字列の場合 (HTMLファイルパス or 生HTMLタグ)
-    if isinstance(obj, str):
-        stripped = obj.strip()
-        # ファイルパスの判定
-        if os.path.exists(stripped) and stripped.lower().endswith(".html"):
-            try:
-                with open(stripped, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    # bodyタグの内側があれば抽出
-                    body_m = re.search(r"<body[^>]*>(.*?)</body>", content, flags=re.DOTALL | re.IGNORECASE)
-                    return body_m.group(1).strip() if body_m else content.strip()
-            except Exception:
-                pass
-        # 生HTMLタグ
-        if stripped.startswith("<"):
-            return stripped
 
     return f"<div class='graph-object'>{str(obj)}</div>"
 
@@ -144,6 +259,18 @@ class Container(Element):
         self.elements.append(card)
         return card
 
+    @property
+    def card(self) -> "Card":
+        """コンテナ内の直近の Card を取得する。存在しない場合は自動生成して追加する。"""
+        for el in reversed(self.elements):
+            if isinstance(el, Card):
+                return el
+        return self.add_card()
+
+    @card.setter
+    def card(self, card_obj: "Card"):
+        self.elements.append(card_obj)
+
     def add_grid(
         self,
         col: Union[int, Sequence[int], str] = 2,
@@ -164,16 +291,37 @@ class Container(Element):
         """add_graph のエイリアス"""
         return self.add_graph(obj)
 
+    def add_table(self, obj) -> "Table":
+        """Pandas DataFrame等を埋め込む（テーブル専用CSSが適用される）"""
+        table = Table(obj)
+        self.elements.append(table)
+        return table
+
+    def add_html(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%") -> "HTMLEmbed":
+        """
+        外部のHTMLファイルパス、または生HTMLタグを追加する
+        iframe=False (デフォルト): <body>の中身を抽出・Plotlyの正規化を行い直接DOMとして埋め込む
+        iframe=True: 独立したiframeとして読み込む（CSSのコンフリクトを避けたい場合）
+        """
+        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width)
+        self.elements.append(html_obj)
+        return html_obj
+
     def add_image(self, src: str = None, img_path: str = None, height: str = None, caption: str = None) -> "Image":
         actual_src = img_path if img_path is not None else src
         img = Image(src=actual_src, height=height, caption=caption)
         self.elements.append(img)
         return img
 
-    def add_memo(self, text: str) -> "Memo":
+    def add_memo(self, text: str = "") -> "Memo":
         memo = Memo(text)
         self.elements.append(memo)
         return memo
+
+    def add_point(self, text: str = "") -> "Point":
+        point = Point(text)
+        self.elements.append(point)
+        return point
 
     # 後方互換性プロパティ
     @property
@@ -234,38 +382,146 @@ class Graph(Element):
 Chart = Graph
 
 
+class Table(Element):
+    """Pandas DataFrame 等を統一的にラップしてテーブルとしてHTML化する要素"""
+    def __init__(self, obj):
+        self.raw_obj = obj
+        self.html_snippet = to_graph_html(obj)
+
+    def to_html(self, embed: bool = True) -> str:
+        if not self.html_snippet:
+            return ""
+        return f'<div class="slide-table">\n{self.html_snippet}\n</div>'
+
+    def has_chart(self) -> bool:
+        return False
+
+
+class HTMLEmbed(Element):
+    """外部HTMLファイルパスまたは生HTML文字列を埋め込む要素"""
+    def __init__(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%"):
+        self.path_or_html = path_or_html
+        self.iframe = iframe
+        self.height = height
+        self.width = width
+        
+    def to_html(self, embed: bool = True) -> str:
+        if not self.path_or_html:
+            return ""
+            
+        stripped = self.path_or_html.strip()
+        
+        # iframe モードの場合 (パス指定前提)
+        if self.iframe:
+            # 生HTMLタグが渡された場合はiframeでは厳しいのでそのまま出力する
+            if stripped.startswith("<"):
+                return stripped
+            # style="border:none;" などで見栄えを良くする
+            return f'<iframe src="{stripped}" width="{self.width}" height="{self.height}" style="border:none; overflow:hidden;" scrolling="no"></iframe>'
+            
+        # iframe=False (embed) モードの場合
+        # ファイルパスの判定
+        if os.path.exists(stripped) and stripped.lower().endswith(".html"):
+            try:
+                with open(stripped, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                # 1. 不要な外枠タグ・ヘッダー・重複CDNスクリプトを除去
+                content = re.sub(r'<!DOCTYPE.*?>', '', content, flags=re.IGNORECASE)
+                content = re.sub(r'</?(?:html|head|body)[^>]*>', '', content, flags=re.IGNORECASE)
+                content = re.sub(r'<meta[^>]*>', '', content, flags=re.IGNORECASE)
+                content = re.sub(r'<script\s+[^>]*src=["\'][^"\']*plotly[^"\']*["\'][^>]*>\s*</script>', '', content, flags=re.IGNORECASE)
+
+                # 2. Plotlyの描画スクリプトをスライド表示時まで遅延実行させるため、型を text/plain に変更
+                content = re.sub(
+                    r'<script(?:\s+type=["\']text/javascript["\'])?>',
+                    '<script type="text/plain" class="plotly-delayed-script">',
+                    content,
+                    flags=re.IGNORECASE
+                )
+
+                # 3. 一番外側のPlotly固定幅ラッパーdiv（height:...; width:...;）を100%に正規化
+                content = re.sub(
+                    r'<div\s+style="[^"]*?(?:height:\s*\d+px|width:\s*\d+px)[^"]*">',
+                    '<div style="width:100%; height:100%; position:relative;">',
+                    content,
+                    count=1,
+                    flags=re.IGNORECASE
+                )
+
+                # 4. included-chart-container でラップ
+                w = self.width if (self.width.endswith("%") or self.width.endswith("px")) else f"{self.width}px"
+                h = self.height if (self.height.endswith("%") or self.height.endswith("px")) else f"{self.height}px"
+                style_attr = f'style="width: {w}; height: {h}; overflow: hidden; position: relative; margin: 0 auto;"'
+                return f'<div class="included-chart-container" {style_attr}>\n{content.strip()}\n</div>'
+            except Exception as e:
+                return f"<div>Error loading HTML file: {stripped} ({e})</div>"
+                
+        # ファイルパスでない場合は生HTMLとして扱う
+        return stripped
+        
+    def has_chart(self) -> bool:
+        # iframeやembedの中にPlotlyが含まれている可能性があるため一応Trueにしておく
+        return True
+
+
 class Image(Element):
-    """画像要素（ローカルファイルなら自動でBase64エンコードして完全自己完結化）"""
-    def __init__(self, src: str = None, img_path: str = None, height: str = None, caption: str = None):
+    """画像要素（ローカルファイルやPILイメージを自動でBase64エンコードして完全自己完結化）"""
+    def __init__(self, src=None, img_path=None, height: str = None, caption: str = None):
         self.src = img_path if img_path is not None else src
         self.height = height
         self.caption = caption
 
     def to_html(self, embed: bool = True) -> str:
-        if not self.src:
+        if self.src is None:
             return ""
 
-        src_uri = self.src
-        # ローカルファイルのBase64エンコード
-        if embed and os.path.exists(self.src):
+        src_uri = ""
+        # 1. PIL Image または save メソッドを持つオブジェクト
+        if hasattr(self.src, "save") and callable(self.src.save):
             try:
-                p = Path(self.src)
-                ext = p.suffix.lower().lstrip(".")
-                mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
-                with open(p, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode("utf-8")
-                    src_uri = f"data:{mime};base64,{b64}"
+                buf = io.BytesIO()
+                fmt = getattr(self.src, "format", None) or "PNG"
+                self.src.save(buf, format=fmt)
+                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                src_uri = f"data:image/{fmt.lower()};base64,{b64}"
             except Exception:
-                src_uri = self.src
+                src_uri = ""
+        # 2. ローカルファイルパスまたは文字列
+        elif isinstance(self.src, (str, Path)):
+            src_str = str(self.src).strip()
+            if embed and os.path.exists(src_str):
+                try:
+                    p = Path(src_str)
+                    ext = p.suffix.lower().lstrip(".")
+                    mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
+                    with open(p, "rb") as f:
+                        b64 = base64.b64encode(f.read()).decode("utf-8")
+                        src_uri = f"data:{mime};base64,{b64}"
+                except Exception:
+                    src_uri = src_str
+            else:
+                src_uri = src_str
+        else:
+            src_uri = str(self.src)
 
-        style_parts = []
+        if not src_uri:
+            return ""
+
+        style_parts = [
+            "max-width: 100%;",
+            "max-height: 100%;",
+            "object-fit: contain;",
+        ]
         if self.height:
-            h = self.height if (self.height.endswith("px") or self.height.endswith("%")) else f"{self.height}px"
-            style_parts.append(f"max-height: {h};")
+            h = self.height if (self.height.endswith("px") or self.height.endswith("%") or self.height.endswith("vh")) else f"{self.height}px"
             style_parts.append(f"height: {h};")
-        style_parts.append("object-fit: contain;")
-        style_attr = f' style="{" ".join(style_parts)}"' if style_parts else ""
+            style_parts.append(f"max-height: {h};")
+        else:
+            style_parts.append("width: 100%;")
+            style_parts.append("height: 100%;")
 
+        style_attr = f' style="{" ".join(style_parts)}"'
         caption_html = f'<figcaption>{self.caption}</figcaption>' if self.caption else ""
         return f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
 
@@ -279,28 +535,56 @@ class Card(Container):
 
     def to_html(self, embed: bool = True) -> str:
         cls_parts = ["card"]
-        if self.color:
-            cls_parts.append(f"card-{self.color}")
-        
         styles = []
+
+        known_colors = {"yellow", "red", "blue", "green", "gold"}
+        if self.color and self.color != "none":
+            if self.color in known_colors:
+                cls_parts.append(f"card-{self.color}")
+            else:
+                # 任意のCSSカラー指定（HEXカラーやrgbaなど）
+                styles.append(f"background: {self.color};")
+
         if self.bg:
             styles.append(f"background: {self.bg};")
         if self.height:
             h = self.height if (self.height.endswith("px") or self.height.endswith("%")) else f"{self.height}px"
             styles.append(f"height: {h}; min-height: {h};")
-            
+
         style_attr = f' style="{" ".join(styles)}"' if styles else ""
         inner_html = super().to_html(embed=embed)
         return f'<div class="{" ".join(cls_parts)}"{style_attr}>\n{inner_html}\n</div>'
 
 
-class Memo(Element):
-    def __init__(self, text: str):
+class Memo(Container):
+    def __init__(self, text: str = ""):
+        super().__init__()
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
-        formatted = format_inline_markdown(self.text)
-        return f'<div class="layout-memo">\n{formatted}\n</div>'
+        parts = []
+        if self.text:
+            parts.append(format_inline_markdown(self.text))
+        inner = super().to_html(embed=embed)
+        if inner:
+            parts.append(inner)
+        return f'<div class="layout-memo">\n' + "\n".join(parts) + '\n</div>'
+
+
+class Point(Container):
+    """ポイント強調ボックス (.point-box) 要素。内部に Grid や Image などを自由にネスト可能"""
+    def __init__(self, text: str = ""):
+        super().__init__()
+        self.text = text
+
+    def to_html(self, embed: bool = True) -> str:
+        parts = []
+        if self.text:
+            parts.append(format_inline_markdown(self.text))
+        inner = super().to_html(embed=embed)
+        if inner:
+            parts.append(inner)
+        return f'<div class="point-box">\n' + "\n".join(parts) + '\n</div>'
 
 
 class GridCell(Container):

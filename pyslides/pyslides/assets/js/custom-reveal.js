@@ -51,6 +51,29 @@ function initEnhancements() {
   }
 }
 
+function resizePlotlyElement(el) {
+  try {
+    var container = el.closest('.included-chart-container') || el.parentElement;
+    var w = container ? container.clientWidth : 0;
+    var h = container ? container.clientHeight : 0;
+    if (w === 0 || h === 0) return;
+
+    var update = { autosize: true, width: w, height: h };
+
+    if (!el._fullLayout || !el._fullLayout.scene) {
+      update.margin = { l: 55, r: 25, t: 42, b: 42 };
+      update['xaxis.automargin'] = true;
+      update['yaxis.automargin'] = true;
+      update.font = { size: 9 };
+      update.titlefont = { size: 11 };
+    }
+    Plotly.relayout(el, update);
+    Plotly.Plots.resize(el);
+  } catch(e) {
+    try { Plotly.Plots.resize(el); } catch(e2) {}
+  }
+}
+
 // スライド切り替えイベント (Plotly遅延実行 & リサイズ)
 function initPlotlyOnSlide(scopeEl) {
   if (!scopeEl) return;
@@ -67,34 +90,33 @@ function initPlotlyOnSlide(scopeEl) {
     scriptEl.classList.add('plotly-delayed-script-done');
   });
 
-  // 2. 既に描画済みのグラフがあればリサイズ処理
+  // 2. 描画済みのグラフのリサイズ & ResizeObserver設定
   if (typeof Plotly !== 'undefined') {
     root.querySelectorAll('.plotly-graph-div, .js-plotly-plot, [id^="chart-"]').forEach(function(el) {
-      try {
-        var container = el.closest('.included-chart-container') || el.parentElement;
-        var w = container ? container.clientWidth : 0;
-        var h = container ? container.clientHeight : 0;
-        if (w === 0 || h === 0) return;
+      resizePlotlyElement(el);
 
-        var update = { autosize: true, width: w, height: h };
-
-        if (!el._fullLayout || !el._fullLayout.scene) {
-          update.margin = { l: 35, r: 15, t: 35, b: 30 };
-          update.font = { size: 9 };
-          update.titlefont = { size: 11 };
-        }
-        Plotly.relayout(el, update);
-        Plotly.Plots.resize(el);
-      } catch(e) {
-        try { Plotly.Plots.resize(el); } catch(e2) {}
+      var container = el.closest('.included-chart-container') || el.parentElement;
+      if (container && typeof ResizeObserver !== 'undefined' && !container._plotlyObserver) {
+        container._plotlyObserver = new ResizeObserver(function() {
+          resizePlotlyElement(el);
+        });
+        container._plotlyObserver.observe(container);
       }
     });
   }
 }
 
-function updateSlideState() {
-  const indices = Reveal.getIndices();
-  const isTitle = (indices.h === 0 && indices.v === 0);
+function updateSlideState(currentSlide) {
+  var slide = currentSlide || Reveal.getCurrentSlide();
+  var isTitle = false;
+  if (slide) {
+    isTitle = slide.classList.contains('title-section') || !!slide.querySelector('.title-slide');
+  } else {
+    var firstSection = document.querySelector('.reveal .slides > section');
+    if (firstSection) {
+      isTitle = firstSection.classList.contains('title-section') || !!firstSection.querySelector('.title-slide');
+    }
+  }
   document.body.classList.toggle('is-title-slide', isTitle);
 }
 
@@ -112,30 +134,48 @@ function updateAgendaSteps(scopeEl) {
     var visibleTriggers = section.querySelectorAll('.agenda-step-trigger.visible');
     var stepIdx = visibleTriggers.length;
     if (stepIdx >= steps.length) stepIdx = steps.length - 1;
-    var activeIndices = steps[stepIdx] || [];
+    var step = steps[stepIdx];
     var items = container.querySelectorAll('.agenda-item');
-    items.forEach(function(item, idx) {
-      if (activeIndices.indexOf(idx) !== -1) {
+
+    if (step === 'none') {
+      items.forEach(function(item) {
+        item.classList.remove('is-active', 'active-fixed', 'dimmed');
+      });
+    } else if (step === 'gray' || step === 'grey') {
+      items.forEach(function(item) {
+        item.classList.remove('is-active', 'active-fixed');
+        item.classList.add('dimmed');
+      });
+    } else if (step === 'all') {
+      items.forEach(function(item) {
         item.classList.add('is-active');
         item.classList.remove('dimmed');
-      } else {
-        item.classList.remove('is-active');
-        item.classList.add('dimmed');
-      }
-    });
+      });
+    } else {
+      var activeIndices = Array.isArray(step) ? step : [step];
+      items.forEach(function(item, idx) {
+        if (activeIndices.indexOf(idx) !== -1) {
+          item.classList.add('is-active');
+          item.classList.remove('dimmed');
+        } else {
+          item.classList.remove('is-active', 'active-fixed');
+          item.classList.add('dimmed');
+        }
+      });
+    }
   } catch(e) {}
 }
 
 Reveal.on('ready', function(event) {
   initEnhancements();
-  updateSlideState();
+  updateSlideState(event.currentSlide);
   updateAgendaSteps(event.currentSlide);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 100);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 500); // 念のため
 });
 
 Reveal.on('slidechanged', function(event) {
-  updateSlideState();
+  updateSlideState(event.currentSlide);
   updateAgendaSteps(event.currentSlide);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 100);
   setTimeout(function() { initPlotlyOnSlide(event.currentSlide); }, 500);

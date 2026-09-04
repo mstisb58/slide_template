@@ -220,6 +220,23 @@ body.is-title-slide .slide-fixed-logo {
   background: #f8fafc;
 }
 
+/* カード・グリッド内のコンパクトなテーブル表示 */
+.card table,
+.card .slide-table,
+.grid-cell table {
+  width: 100% !important;
+  margin: 8px 0 !important;
+  font-size: 0.70em !important;
+}
+
+.card th,
+.card td,
+.grid-cell th,
+.grid-cell td {
+  padding: 5px 8px !important;
+  word-break: break-word;
+}
+
 /* ==========================================================================
    1. 表紙（タイトルスライド）
    ========================================================================== */
@@ -314,12 +331,14 @@ body.is-title-slide .slide-fixed-logo {
   background: var(--accent);
   color: #000000;
   font-weight: 800;
-  width: 34px;
+  min-width: 34px;
   height: 34px;
+  padding: 0 6px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 17px;
   font-size: 0.88em;
   flex-shrink: 0;
 }
@@ -371,16 +390,22 @@ body.is-title-slide .slide-fixed-logo {
 /* ==========================================================================
    3. グリッドレイアウト & カードシステム
    ========================================================================== */
-.reveal .slides section:has(.custom-grid) {
+.reveal .slides section:not(.title-section) {
   display: flex !important;
   flex-direction: column !important;
   height: 720px !important;
+  max-height: 720px !important;
   box-sizing: border-box !important;
+  overflow: hidden !important;
+  justify-content: flex-start !important;
 }
 
-.reveal .slides section:has(.custom-grid) > h2,
-.reveal .slides section:has(.custom-grid) > p,
-.reveal .slides section:has(.custom-grid) > ul {
+.reveal .slides section:not(.title-section) > h2,
+.reveal .slides section:not(.title-section) > p,
+.reveal .slides section:not(.title-section) > ul,
+.reveal .slides section:not(.title-section) > ol,
+.reveal .slides section:not(.title-section) > .point-box,
+.reveal .slides section:not(.title-section) > .layout-memo {
   flex-shrink: 0 !important;
 }
 
@@ -388,9 +413,11 @@ body.is-title-slide .slide-fixed-logo {
   display: grid !important;
   width: 100% !important;
   box-sizing: border-box !important;
-  margin: 10px 0 !important;
-  flex: 1 1 auto !important;
+  margin: 8px 0 !important;
+  flex: 1 1 0 !important;
   min-height: 0 !important;
+  height: 100% !important;
+  align-items: stretch !important;
 }
 
 .custom-grid .grid-cell {
@@ -402,6 +429,25 @@ body.is-title-slide .slide-fixed-logo {
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+}
+
+.custom-grid .grid-cell > p,
+.custom-grid .grid-cell > ul,
+.custom-grid .grid-cell > ol,
+.custom-grid .grid-cell > h3 {
+  flex-shrink: 0 !important;
+}
+
+.custom-grid .grid-cell > .slide-image,
+.custom-grid .grid-cell > .included-chart-container,
+.custom-grid .grid-cell > .card {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  height: 100% !important;
+  width: 100% !important;
 }
 
 /* カードコンポーネント */
@@ -440,6 +486,11 @@ body.is-title-slide .slide-fixed-logo {
 .card.card-blue {
   background: var(--accent-blue-soft) !important;
   border-color: rgba(0, 43, 255, 0.35) !important;
+}
+
+.card.card-green {
+  background: var(--color-green-soft) !important;
+  border-color: rgba(16, 185, 129, 0.35) !important;
 }
 
 .card.card-gold {
@@ -485,6 +536,53 @@ body.is-title-slide .slide-fixed-logo {
   margin: 0 0 0 18px !important;
 }
 
+/* 画像コンテナ (add_image) */
+.slide-image {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+/* 画像本体: アスペクト比を保って入る方に自動縮小 */
+.slide-image img,
+.slide-image > img,
+.custom-grid .grid-cell img,
+.reveal section img.slide-img,
+.reveal .slides section img {
+  max-width: 100% !important;
+  max-height: 100% !important;
+  width: auto !important;
+  height: auto !important;
+  object-fit: contain !important;
+  margin: auto !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  flex-shrink: 1 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  border-radius: 4px;
+}
+
+.slide-image figcaption {
+  font-size: 0.75em;
+  color: var(--text-sub);
+  margin-top: 4px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
 /* 横並び画像コンテナ */
 .images-2 {
   display: flex;
@@ -492,12 +590,14 @@ body.is-title-slide .slide-fixed-logo {
   justify-content: center;
   align-items: center;
   margin: 16px 0;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
 }
 
 .images-2 img,
 .images-2 .slide-img {
   max-width: 48% !important;
-  max-height: 320px !important;
+  max-height: 100% !important;
   object-fit: contain;
   background: transparent !important;
 }
@@ -508,12 +608,14 @@ body.is-title-slide .slide-fixed-logo {
   justify-content: center;
   align-items: center;
   margin: 16px 0;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
 }
 
 .images-3 img,
 .images-3 .slide-img {
   max-width: 31% !important;
-  max-height: 280px !important;
+  max-height: 100% !important;
   object-fit: contain;
   background: transparent !important;
 }
@@ -524,114 +626,60 @@ body.is-title-slide .slide-fixed-logo {
 .included-chart-container {
   width: 100% !important;
   height: 100% !important;
-  min-height: 200px !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
   position: relative !important;
   overflow: hidden !important;
   box-sizing: border-box !important;
   scrollbar-width: none !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 .included-chart-container *::-webkit-scrollbar {
   display: none !important;
 }
 
+.included-chart-container > div {
+  width: 100% !important;
+  height: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
 .included-chart-container .plotly-graph-div,
 .included-chart-container .js-plotly-plot {
   width: 100% !important;
   height: 100% !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
 }
 
 /* ==========================================================================
-   6. マスタースライドレイアウト (PowerPoint互換)
+   6. テンプレート別スタイル (title, agenda, normal, default & custom)
    ========================================================================== */
-.slide-layout {
-  display: flex;
-  flex-direction: column;
-  height: 640px;
-  max-height: 640px;
-  width: 100%;
-  box-sizing: border-box;
-  gap: 10px;
+/* 標準スライド (normal): h2 タイトル付き */
+.reveal .slides section.normal-section {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
 }
 
-/* 1グラフ集中型 */
-.layout-chart-focus .layout-chart-area {
-  flex: 1;
-  min-height: 0;
-  height: 440px;
-  width: 100%;
-  border-radius: 6px;
-  background: #ffffff;
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  overflow: hidden;
+/* 白紙マスタ (default): タイトルすらない完全白紙マスタ（ロゴと上下帯のみ） */
+.reveal .slides section.default-section {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-start !important;
 }
 
-/* グラフ＋左右解説型 */
-.layout-chart-split .layout-split-area {
-  flex: 1;
-  min-height: 0;
-  height: 380px;
-  display: grid;
-  grid-template-columns: 58% 40%;
-  gap: 20px;
-}
-
-/* 3連比較型 */
-.layout-compare-3 .layout-compare-area {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-}
-
-/* まとめ・課題型 */
-.layout-summary .layout-lead {
-  font-size: 1em;
-  font-weight: 500;
-  background: var(--accent-blue-soft);
-  border-left: 4px solid var(--accent-blue);
-  padding: 8px 16px;
-  border-radius: 0 6px 6px 0;
-  margin-bottom: 8px !important;
-}
-
-.layout-summary .layout-cards-area {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-}
-
-.layout-summary .summary-card {
-  background: #ffffff;
-  border: 1px solid var(--border-color);
-  border-top: 5px solid var(--accent);
-  border-radius: 8px;
-  padding: 16px 20px;
-  box-shadow: var(--shadow-sm);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  height: 100%;
-  box-sizing: border-box;
-}
-
-.layout-summary .summary-card:nth-child(2) {
-  border-top-color: var(--accent-blue);
-}
-
-.layout-summary .summary-card:nth-child(3) {
-  border-top-color: var(--color-green);
-}
-
-.layout-summary .summary-card h3 {
-  margin: 0 !important;
-  font-size: 1.05em !important;
-  border-bottom: 1px solid var(--border-light);
-  padding-bottom: 6px;
+/* ユーザー定義カスタムテンプレート (例: template="grid3" 等の拡張フック) */
+.reveal .slides section[class*="-section"] {
+  box-sizing: border-box !important;
 }
 
 /* ==========================================================================
@@ -669,4 +717,34 @@ body.is-title-slide .slide-fixed-logo {
   color: #000000;
   border-color: var(--accent);
   transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   8. 箇条書き・リスト (インデント内部要素 & 行間対応)
+   ========================================================================== */
+.reveal ul {
+  margin: 8px 0 12px 1.2em;
+  padding: 0;
+  display: block;
+}
+
+.reveal ul li {
+  margin-bottom: 12px;
+  line-height: 1.45;
+}
+
+/* 箇条書き項目の内部要素 (インデント継続行: 行間が詰まり、説明文として自然にレイアウト) */
+.reveal ul li .list-body {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.9em;
+  line-height: 1.4;
+  color: var(--text-main);
+  opacity: 0.92;
+}
+
+/* リスト外の段落 (インデントなしの場合は左端から独立した行間あり段落として配置) */
+.reveal section p {
+  margin: 12px 0;
+  line-height: 1.6;
 }

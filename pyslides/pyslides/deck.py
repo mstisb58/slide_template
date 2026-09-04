@@ -14,7 +14,6 @@ class Deck:
         slides_or_title: Union[list, tuple, str] = None,
         title: str = "Presentation",
         theme: str = "default",
-        style: str = None,
         agenda_items: list = None,
         slides: list = None
     ):
@@ -30,7 +29,6 @@ class Deck:
 
         self.title = title
         self.theme = theme
-        self.style = style
         self.agenda_items = agenda_items or []
         self._slides = []
         self.join(initial_slides)
@@ -57,18 +55,16 @@ class Deck:
         self._slides.append(slide)
         return self
 
+    def add_slide(self, slide: Slide) -> "Deck":
+        """append のエイリアス"""
+        return self.append(slide)
+
     def extend(self, slides: list) -> "Deck":
         """複数のスライドを末尾に追加"""
         for s in slides:
             s.deck = self
             self._slides.append(s)
         return self
-
-    def add_slide(self, template: str = "default", **kwargs) -> Slide:
-        """後方互換性：新しいスライドを直接生成して追加"""
-        slide = Slide(template=template, deck=self, **kwargs)
-        self._slides.append(slide)
-        return slide
         
     def to_html(self, output_path: str, embed: bool = True):
         from .renderer import render_slide_html
@@ -87,13 +83,21 @@ class Deck:
             sections.append(sec_html)
             
         slides_str = "\n".join(sections)
+        
+        # SlideFactoryからスタイルリストを収集 (重複排除しつつ順序を維持)
+        style_paths = []
+        for slide in self._slides:
+            if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
+                if slide.factory.style not in style_paths:
+                    style_paths.append(slide.factory.style)
+        
         final_html = build_full_html(
             slides_section_html=slides_str,
             title=self.title,
             single_slide=False,
             is_title_slide=(len(self._slides) > 0 and self._slides[0].template == "title"),
             has_chart=any_charts,
-            custom_style_path=self.style
+            custom_style_paths=style_paths
         )
         
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -119,15 +123,29 @@ class Deck:
             sections.append(sec_html)
             
         slides_str = "\n".join(sections)
+        
+        # SlideFactoryからスタイルリストを収集 (重複排除しつつ順序を維持)
+        style_paths = []
+        for slide in self._slides:
+            if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
+                if slide.factory.style not in style_paths:
+                    style_paths.append(slide.factory.style)
+                    
         preview_html = build_full_html(
             slides_section_html=slides_str,
             title=self.title or "Presentation Deck Preview",
             single_slide=True,
             is_title_slide=is_first_title,
             has_chart=any_charts,
-            custom_style_path=self.style
+            custom_style_paths=style_paths
         )
 
         b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
         data_url = f"data:text/html;base64,{b64_html}"
-        display(IFrame(src=data_url, width="100%", height=height))
+        if len(data_url) < 2000000:
+            display(IFrame(src=data_url, width="100%", height=height))
+        else:
+            import html
+            from IPython.display import HTML
+            escaped = html.escape(preview_html, quote=True)
+            display(HTML(f'<iframe srcdoc="{escaped}" width="100%" height="{height}" frameborder="0" allowfullscreen style="border:none; width:100%; height:{height}px;"></iframe>'))

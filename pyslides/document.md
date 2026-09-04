@@ -57,25 +57,34 @@ pyslides/
 
 ## 3. 主要機能の実装メカニズム
 
-### (1) アジェンダのステップ遷移アニメーション
+### (1) アジェンダのステップ遷移アニメーションとハイライト仕様
 
-目次スライドにおいて、クリックやキー操作で特定項目を順番にハイライトする機能は、**カスタムデータ属性と Reveal.js のフラグメントイベントの連動**により実現されています。
+目次スライド（`template="agenda"`）において、`item` を辞書（`{"01": "背景", ...}`）で渡すことで、**左側の丸バッジ（`.agenda-num`）の文字列と、`highlight` の指定キーを完全に連動**させることができます（`"A"`, `"B"` や `"い"`, `"ろ"` など任意のキーが利用可能）。従来のリスト（`["背景", ...]`）を渡した場合は自動で `"01"`, `"02"`... が割り振られます。
+
+- **`"none"`（デフォルト）**: すべて通常状態（ハイライトもトーンダウンもない、標準の白カード）。
+- **`"gray"`**: すべてトーンダウン（全項目が `.dimmed` のグレーアウト状態）。
+- **`"all"`**: すべてハイライト（全項目が `.is-active` / `.active-fixed` の光っている状態）。
+- **キー指定（例: `"01"` や `["01", "03"]`, `"A"`）**: 指定したキーの項目のみハイライトし、それ以外の項目はトーンダウン。
+- **ステップ指定（例: `["none", "01"]` や `["all", "02"]`）**: 
+  Reveal.js のフラグメントと連動し、ページ送り（クリック / スペース / 矢印キー）に合わせて段階的にハイライト状態が切り替わります。
 
 1. **Python (`renderer.py`) による出力**:
    ```html
-   <div class="agenda-list is-step" data-agenda-steps='[[0, 1, 2, 3], [0], [1], [3]]'>
-     <div class="agenda-item is-active" data-agenda-index="0">...</div>
-     <div class="agenda-item is-active" data-agenda-index="1">...</div>
+   <div class="agenda-list is-step" data-agenda-steps='["none", [0]]'>
+     <div class="agenda-item" data-agenda-index="0" data-agenda-key="01">
+       <span class="agenda-num">01</span>
+       <span>背景</span>
+     </div>
      ...
    </div>
-   <!-- ステップ数に応じた透明なトリガーフラグメント -->
-   <div class="agenda-step-trigger fragment fade-in-highlight" data-fragment-index="1"></div>
-   <div class="agenda-step-trigger fragment fade-in-highlight" data-fragment-index="2"></div>
    ```
 2. **JavaScript (`custom-reveal.js`) による動的制御**:
    - `Reveal.on('fragmentshown')` および `fragmenthidden` を監視。
-   - 現在アクティブになっている `.agenda-step-trigger` の個数を数え、対応するステップ配列（例: `[1]`）を取得。
-   - インデックスに含まれる項目に `.is-active` を付与し、それ以外に `.dimmed` を付与。
+   - 現在アクティブになっている `.agenda-step-trigger` の個数からステップ値（`"none"`, `"gray"`, `"all"`, または `[インデックス]`）を取得。
+   - `"none"`: 全項目の `.is-active`, `.dimmed` を除去。
+   - `"gray"`: 全項目に `.dimmed` を付与。
+   - `"all"`: 全項目に `.is-active` を付与。
+   - `[インデックス]`: 該当インデックスに `.is-active`、他には `.dimmed` を付与。
 
 ### (2) Plotly グラフの描画崩れ防止
 
@@ -96,6 +105,15 @@ Plotly は非表示要素（`display: none` または画面外のスライド）
    - 背景クリックでのページ送りにも対応。
 3. **Plotly スクリプトの CDN 最適化**:
    - 単体スライドプレビュー時、4MB を超える Plotly 本体 JS を毎セル Base64 化するとノートブックが極端に重くなるため、プレビュー時のみ Plotly CDN を利用し、ファイル出力時（`to_html`）には完全ローカルインライン化を行います。
+
+### (4) グリッド＆カードの Python ネイティブコンポーザビリティ
+
+以前の Markdown 独自記法（`::: card(...)` や `::: grid`）によるパース処理を廃止し、**コンテナツリー構造による完全な Python オブジェクト操作**を実現しています。
+
+- **`GridCell.add_card(color="...")`**: セル内にカード要素を生成。
+- **`GridCell.card` プロパティ**: セル内のカードを直接参照可能（`s_g[0].card.add_markdown(...)`）。
+- **`Card.add_image(pil_img)`**: PIL の Image オブジェクトを直接渡せば、自動でインメモリ Base64 エンコードされて `<img src="data:image/png;base64,...">` として埋め込まれます。
+- **多段構成**: カードの外（下）に `s_g[0].add_markdown(...)` で注釈を付けたり、スライド全体に `s.add_memo(...)` を配置するなど、直感的な Python コードのネストで自由自在なレイアウトを構築できます。
 
 ---
 

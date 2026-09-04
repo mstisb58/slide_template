@@ -31,7 +31,7 @@ class Slide(Container):
     def __init__(
         self,
         template: str = "default",
-        deck=None,
+        factory=None,
         title: str = "",
         author: str = "",
         date: str = "",
@@ -40,7 +40,8 @@ class Slide(Container):
     ):
         super().__init__()
         self.template = template
-        self.deck = deck
+        self.factory = factory
+        self.deck = None
         self.attributes = {
             "title": title,
             "author": author,
@@ -50,17 +51,40 @@ class Slide(Container):
         }
 
     def __getattr__(self, name):
-        if hasattr(self, "attributes") and name in self.attributes:
-            return self.attributes[name]
+        # self.__dict__ を直接参照して __getattr__ の無限再帰を完全に防止
+        attrs = self.__dict__.get("attributes")
+        if attrs is not None and isinstance(attrs, dict) and name in attrs:
+            return attrs[name]
         raise AttributeError(f"'Slide' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ("template", "deck", "attributes", "elements"):
+        if name in ("template", "factory", "deck", "attributes", "elements"):
             super().__setattr__(name, value)
         else:
-            if hasattr(self, "attributes") and isinstance(self.attributes, dict):
-                self.attributes[name] = value
+            attrs = self.__dict__.get("attributes")
+            if attrs is not None and isinstance(attrs, dict):
+                attrs[name] = value
             super().__setattr__(name, value)
+
+    def __copy__(self):
+        import copy
+        new_slide = Slide(
+            template=self.template,
+            factory=self.factory,
+            **copy.copy(self.attributes)
+        )
+        new_slide.elements = copy.copy(self.elements)
+        return new_slide
+
+    def __deepcopy__(self, memo):
+        import copy
+        new_slide = Slide(
+            template=self.template,
+            factory=self.factory,
+            **copy.deepcopy(self.attributes, memo)
+        )
+        new_slide.elements = copy.deepcopy(self.elements, memo)
+        return new_slide
 
     # 属性アクセサ
     @property
@@ -116,7 +140,7 @@ class Slide(Container):
     def highlight_order(self) -> HighlightOrder:
         val = self.attributes.get("highlight_order", self.attributes.get("highlight", self.attributes.get("hilight", None)))
         if val is None:
-            return ("all",)
+            return ("none",)
         if isinstance(val, (str, int)):
             return (val,)
         if isinstance(val, list):
@@ -144,7 +168,7 @@ class Slide(Container):
         from .builder import build_full_html
 
         slide_sec_html, is_title, has_chart = render_slide_html(self)
-        custom_style = self.deck.style if self.deck else None
+        custom_style = self.factory.style if self.factory else None
         
         preview_html = build_full_html(
             slides_section_html=slide_sec_html,
@@ -152,9 +176,15 @@ class Slide(Container):
             single_slide=True,
             is_title_slide=is_title,
             has_chart=has_chart,
-            custom_style_path=custom_style
+            custom_style_paths=[custom_style] if custom_style else []
         )
 
         b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
         data_url = f"data:text/html;base64,{b64_html}"
-        display(IFrame(src=data_url, width="100%", height=height))
+        if len(data_url) < 2000000:
+            display(IFrame(src=data_url, width="100%", height=height))
+        else:
+            import html
+            from IPython.display import HTML
+            escaped = html.escape(preview_html, quote=True)
+            display(HTML(f'<iframe srcdoc="{escaped}" width="100%" height="{height}" frameborder="0" allowfullscreen style="border:none; width:100%; height:{height}px;"></iframe>'))
