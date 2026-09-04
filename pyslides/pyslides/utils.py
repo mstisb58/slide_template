@@ -23,6 +23,15 @@ def normalize_embedded_html(content: str, width: str = "100%", height: str = "10
         flags=re.IGNORECASE
     )
 
+    # 2.5. 重複IDの回避: 複数回同じHTMLが埋め込まれた場合に備え、IDを一意に振り直す
+    import uuid
+    id_matches = set(re.findall(r'id=["\']([a-zA-Z0-9_-]+)["\']', content))
+    for old_id in id_matches:
+        # 一般的な短い名前ではなく、UUIDやハッシュっぽいIDのみを対象にする
+        if len(old_id) >= 16 or "-" in old_id:
+            new_id = f"plot-{uuid.uuid4().hex[:12]}"
+            content = content.replace(old_id, new_id)
+
     # 3. 一番外側のPlotly固定幅ラッパーdiv（height:...; width:...;）を100%に正規化
     content = re.sub(
         r'<div\s+style="[^"]*?(?:height:\s*\d+px|width:\s*\d+px)[^"]*">',

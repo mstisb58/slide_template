@@ -61,7 +61,8 @@ def build_full_html(
             progress: false,
             keyboard: true,
             touch: true,
-            center: false
+            center: false,
+            navigationMode: 'linear'
         });
 
         // プレビュー画面内をクリックすると自動フォーカス＆次へ進む（アニメーション確認用）

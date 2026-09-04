@@ -455,9 +455,19 @@ body.is-title-slide .slide-fixed-logo {
   flex-shrink: 0 !important;
 }
 
-.custom-grid .grid-cell>.slide-image,
-.custom-grid .grid-cell>.included-chart-container,
-.custom-grid .grid-cell>.card {
+.custom-grid .grid-cell > .fragment {
+  width: 100% !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+.custom-grid .grid-cell > .slide-image,
+.custom-grid .grid-cell .included-chart-container,
+.custom-grid .grid-cell .card {
   flex: 1 1 0 !important;
   min-height: 0 !important;
   min-width: 0 !important;

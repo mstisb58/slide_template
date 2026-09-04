@@ -3,6 +3,7 @@ import io
 import re
 import uuid
 import base64
+import contextlib
 from pathlib import Path
 from typing import Union, List, Optional, Tuple, Sequence
 
@@ -233,8 +234,70 @@ def to_graph_html(obj) -> str:
     return f"<div class='graph-object'>{str(obj)}</div>"
 
 
+FRAGMENT_ANIMATION_ALIASES = {
+    "semi-out": "semi-fade-out",
+    "highlight": "highlight-red",
+}
+
+def wrap_with_fragment(html: str, step: Optional[Union[int, str]] = None, animation: Optional[str] = "fade-in") -> str:
+    """要素のHTMLをreveal.jsのfragment divでラップする"""
+    if step is None or not html:
+        return html
+    anim = (animation or "fade-in").strip()
+    anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+    cls = "fragment" if anim in ("fade-in", "") else f"fragment {anim}"
+    return f'<div class="{cls}" data-fragment-index="{step}">\n{html}\n</div>'
+
+
+def get_element_step(el: "Element") -> Optional[Union[int, str]]:
+    """要素のステップ番号を安全に取得する"""
+    return getattr(el, "_step", None)
+
+
+class StepProperty:
+    """代入（card.step = 1）もコンテキストマネージャ呼び出し（with s.step():）も両方受け付けるハイブリッドプロパティ"""
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+
+        class _CallableStep:
+            def __call__(_self, step: Optional[Union[int, str]] = None, animation: str = "fade-in"):
+                return instance._step_context(step, animation)
+
+            def __enter__(_self):
+                _self._ctx = instance._step_context()
+                return _self._ctx.__enter__()
+
+            def __exit__(_self, exc_type, exc_val, exc_tb):
+                return _self._ctx.__exit__(exc_type, exc_val, exc_tb)
+
+            def __eq__(_self, other):
+                return instance._step == other
+
+            def __repr__(_self):
+                return f"<StepProperty: {instance._step}>"
+
+        return _CallableStep()
+
+    def __set__(self, instance, value):
+        if instance is not None:
+            instance._step = value
+
+
 class Element:
     """すべての要素の基底クラス"""
+    def __init__(self, step: Optional[Union[int, str]] = None, animation: Optional[str] = None):
+        self._step = step
+        self.animation = animation
+
+    @property
+    def step(self) -> Optional[Union[int, str]]:
+        return self._step
+
+    @step.setter
+    def step(self, value: Optional[Union[int, str]]):
+        self._step = value
+
     def to_html(self, embed: bool = True) -> str:
         raise NotImplementedError
 
@@ -244,15 +307,100 @@ class Element:
 
 class Container(Element):
     """子要素を持つことができる領域（コンテナ）の基底クラス"""
-    def __init__(self):
-        self.elements: List[Element] = []
+    step = StepProperty()
 
-    def add(self, element: Element) -> Element:
+    def __init__(
+        self,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional["Container"] = None
+    ):
+        super().__init__(step=step, animation=animation)
+        self.elements: List[Element] = []
+        self.parent = parent
+        self._current_step: Optional[Union[int, str]] = None
+        self._current_animation: Optional[str] = None
+        self._step_counter: int = 0
+
+    def get_root_container(self) -> "Container":
+        curr = self
+        while curr.parent is not None:
+            curr = curr.parent
+        return curr
+
+    @contextlib.contextmanager
+    def _step_context(self, step: Optional[Union[int, str]] = None, animation: str = "fade-in"):
+        """
+        reveal.js のステップアニメーション用コンテキストマネージャ内部実装。
+        with container.step(): 内で追加された要素に自動でステップ番号とアニメーションを付与する。
+        """
+        root = self.get_root_container()
+        prev_step = self._current_step
+        prev_anim = self._current_animation
+
+        if step is None:
+            root._step_counter += 1
+            cur_step = root._step_counter
+        else:
+            cur_step = step
+            if isinstance(step, int):
+                root._step_counter = max(root._step_counter, step)
+
+        self._current_step = cur_step
+        self._current_animation = animation
+        try:
+            yield cur_step
+        finally:
+            self._current_step = prev_step
+            self._current_animation = prev_anim
+
+    def _resolve_step_and_animation(
+        self,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> Tuple[Optional[Union[int, str]], str]:
+        if step is not None:
+            eff_step = step
+        else:
+            curr = self
+            eff_step = None
+            while curr is not None:
+                if curr._current_step is not None:
+                    eff_step = curr._current_step
+                    break
+                curr = curr.parent
+
+        if animation is not None:
+            eff_anim = animation
+        else:
+            curr = self
+            eff_anim = None
+            while curr is not None:
+                if curr._current_animation is not None:
+                    eff_anim = curr._current_animation
+                    break
+                curr = curr.parent
+
+        return eff_step, (eff_anim or "fade-in")
+
+    def add(self, element: Element, step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> Element:
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        if eff_step is not None and get_element_step(element) is None:
+            element.step = eff_step
+            element.animation = eff_anim
+        if isinstance(element, Container):
+            element.parent = self
         self.elements.append(element)
         return element
 
-    def add_markdown(self, text: str) -> "Markdown":
-        md = Markdown(text)
+    def add_markdown(
+        self,
+        text: str,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> "Markdown":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        md = Markdown(text, step=eff_step, animation=eff_anim)
         self.elements.append(md)
         return md
 
@@ -265,8 +413,11 @@ class Container(Element):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         **kwargs
     ) -> "Card":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
         card = Card(
             color=color,
             bg=bg,
@@ -275,6 +426,9 @@ class Container(Element):
             border_color=border_color,
             text_color=text_color,
             style=style,
+            step=eff_step,
+            animation=eff_anim,
+            parent=self,
             **kwargs
         )
         self.elements.append(card)
@@ -290,6 +444,8 @@ class Container(Element):
 
     @card.setter
     def card(self, card_obj: "Card"):
+        if isinstance(card_obj, Container):
+            card_obj.parent = self
         self.elements.append(card_obj)
 
     def add_grid(
@@ -297,50 +453,75 @@ class Container(Element):
         col: Union[int, Sequence[int], str] = 2,
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
-        height: str = None
+        height: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
     ) -> "Grid":
-        grid = Grid(col=col, row=row, gap=gap, height=height)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        grid = Grid(col=col, row=row, gap=gap, height=height, step=eff_step, animation=eff_anim, parent=self)
         self.elements.append(grid)
         return grid
 
-    def add_graph(self, obj) -> "Graph":
-        graph = Graph(obj)
+    def add_graph(self, obj, step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> "Graph":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        graph = Graph(obj, step=eff_step, animation=eff_anim)
         self.elements.append(graph)
         return graph
 
-    def add_chart(self, obj) -> "Graph":
+    def add_chart(self, obj, step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> "Graph":
         """add_graph のエイリアス"""
-        return self.add_graph(obj)
+        return self.add_graph(obj, step=step, animation=animation)
 
-    def add_table(self, obj) -> "Table":
+    def add_table(self, obj, step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> "Table":
         """Pandas DataFrame等を埋め込む（テーブル専用CSSが適用される）"""
-        table = Table(obj)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        table = Table(obj, step=eff_step, animation=eff_anim)
         self.elements.append(table)
         return table
 
-    def add_html(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%") -> "HTMLEmbed":
+    def add_html(
+        self,
+        path_or_html: str,
+        iframe: bool = False,
+        height: str = "100%",
+        width: str = "100%",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> "HTMLEmbed":
         """
         外部のHTMLファイルパス、または生HTMLタグを追加する
         iframe=False (デフォルト): <body>の中身を抽出・Plotlyの正規化を行い直接DOMとして埋め込む
         iframe=True: 独立したiframeとして読み込む（CSSのコンフリクトを避けたい場合）
         """
-        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width, step=eff_step, animation=eff_anim)
         self.elements.append(html_obj)
         return html_obj
 
-    def add_image(self, src: str = None, img_path: str = None, height: str = None, caption: str = None) -> "Image":
+    def add_image(
+        self,
+        src: str = None,
+        img_path: str = None,
+        height: str = None,
+        caption: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> "Image":
         actual_src = img_path if img_path is not None else src
-        img = Image(src=actual_src, height=height, caption=caption)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        img = Image(src=actual_src, height=height, caption=caption, step=eff_step, animation=eff_anim)
         self.elements.append(img)
         return img
 
-    def add_memo(self, text: str = "") -> "Memo":
-        memo = Memo(text)
+    def add_memo(self, text: str = "", step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> "Memo":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        memo = Memo(text, step=eff_step, animation=eff_anim, parent=self)
         self.elements.append(memo)
         return memo
 
-    def add_point(self, text: str = "") -> "Point":
-        point = Point(text)
+    def add_point(self, text: str = "", step: Optional[Union[int, str]] = None, animation: Optional[str] = None) -> "Point":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        point = Point(text, step=eff_step, animation=eff_anim, parent=self)
         self.elements.append(point)
         return point
 
@@ -349,6 +530,8 @@ class Container(Element):
         text: str = "",
         x: Union[int, float, str] = 0,
         y: Union[int, float, str] = 0,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         **kwargs
     ) -> "StampMarkdown":
         """
@@ -357,7 +540,8 @@ class Container(Element):
         """
         if "str" in kwargs and not text:
             text = kwargs.pop("str")
-        stamp = StampMarkdown(text=text, x=x, y=y, **kwargs)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        stamp = StampMarkdown(text=text, x=x, y=y, step=eff_step, animation=eff_anim, **kwargs)
         self.elements.append(stamp)
         return stamp
 
@@ -391,15 +575,25 @@ class Container(Element):
         self.add_graph(fig)
 
     def to_html(self, embed: bool = True) -> str:
-        parts = [el.to_html(embed=embed) for el in self.elements]
-        return "\n".join(filter(None, parts))
+        parts = []
+        for el in self.elements:
+            html = el.to_html(embed=embed)
+            if not html:
+                continue
+            step_val = get_element_step(el)
+            # GridCell, StampMarkdown は自身の to_html 内で fragment を処理するため二重ラップしない
+            if step_val is not None and not isinstance(el, (GridCell, StampMarkdown)):
+                html = wrap_with_fragment(html, step_val, getattr(el, "animation", "fade-in"))
+            parts.append(html)
+        return "\n".join(parts)
 
     def has_chart(self) -> bool:
         return any(el.has_chart() for el in self.elements)
 
 
 class Markdown(Element):
-    def __init__(self, text: str):
+    def __init__(self, text: str, step: Optional[Union[int, str]] = None, animation: Optional[str] = None):
+        super().__init__(step=step, animation=animation)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -430,8 +624,11 @@ class StampMarkdown(Element):
         css_class: str = "",
         class_name: str = "",
         style: Optional[str] = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         **kwargs
     ):
+        super().__init__(step=step, animation=animation)
         self.text = text
         self.x = f"{x}px" if isinstance(x, (int, float)) else str(x)
         self.y = f"{y}px" if isinstance(y, (int, float)) else str(y)
@@ -483,12 +680,19 @@ class StampMarkdown(Element):
 
         style_str = "; ".join(styles)
         classes = ["slide-stamp"]
+        if self.step is not None:
+            classes.append("fragment")
+            anim = (self.animation or "fade-in").strip()
+            anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+            if anim and anim != "fade-in":
+                classes.append(anim)
         if self.css_class:
             classes.append(self.css_class)
         class_attr = " ".join(classes)
+        frag_attr = f' data-fragment-index="{self.step}"' if self.step is not None else ""
 
         inner_html = format_inline_markdown(self.text)
-        return f'<div class="{class_attr}" style="{style_str}">{inner_html}</div>'
+        return f'<div class="{class_attr}" style="{style_str}"{frag_attr}>{inner_html}</div>'
 
     def has_chart(self) -> bool:
         return False
@@ -496,7 +700,8 @@ class StampMarkdown(Element):
 
 class Graph(Element):
     """Plotly, Matplotlib, Bokeh, Pandas 等を統一的にラップしてHTML化する要素"""
-    def __init__(self, obj):
+    def __init__(self, obj, step: Optional[Union[int, str]] = None, animation: Optional[str] = None):
+        super().__init__(step=step, animation=animation)
         self.raw_obj = obj
         self.html_snippet = to_graph_html(obj)
 
@@ -514,7 +719,8 @@ Chart = Graph
 
 class Table(Element):
     """Pandas DataFrame 等を統一的にラップしてテーブルとしてHTML化する要素"""
-    def __init__(self, obj):
+    def __init__(self, obj, step: Optional[Union[int, str]] = None, animation: Optional[str] = None):
+        super().__init__(step=step, animation=animation)
         self.raw_obj = obj
         self.html_snippet = to_graph_html(obj)
 
@@ -529,7 +735,16 @@ class Table(Element):
 
 class HTMLEmbed(Element):
     """外部HTMLファイルパスまたは生HTML文字列を埋め込む要素"""
-    def __init__(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%"):
+    def __init__(
+        self,
+        path_or_html: str,
+        iframe: bool = False,
+        height: str = "100%",
+        width: str = "100%",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ):
+        super().__init__(step=step, animation=animation)
         self.path_or_html = path_or_html
         self.iframe = iframe
         self.height = height
@@ -571,7 +786,16 @@ class HTMLEmbed(Element):
 
 class Image(Element):
     """画像要素（ローカルファイルやPILイメージを自動でBase64エンコードして完全自己完結化）"""
-    def __init__(self, src=None, img_path=None, height: str = None, caption: str = None):
+    def __init__(
+        self,
+        src=None,
+        img_path=None,
+        height: str = None,
+        caption: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ):
+        super().__init__(step=step, animation=animation)
         self.src = img_path if img_path is not None else src
         self.height = height
         self.caption = caption
@@ -769,9 +993,12 @@ class Card(Container):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
         **kwargs
     ):
-        super().__init__()
+        super().__init__(step=step, animation=animation, parent=parent)
         self.color = color.lower() if color else None
         self.bg = bg
         self.height = height
@@ -827,8 +1054,14 @@ class Card(Container):
 
 
 class Memo(Container):
-    def __init__(self, text: str = ""):
-        super().__init__()
+    def __init__(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -843,8 +1076,14 @@ class Memo(Container):
 
 class Point(Container):
     """ポイント強調ボックス (.point-box) 要素。内部に Grid や Image などを自由にネスト可能"""
-    def __init__(self, text: str = ""):
-        super().__init__()
+    def __init__(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -858,13 +1097,29 @@ class Point(Container):
 
 
 class GridCell(Container):
-    def __init__(self, name: str = ""):
-        super().__init__()
+    def __init__(
+        self,
+        name: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent)
         self.name = name
 
     def to_html(self, embed: bool = True) -> str:
         inner_html = super().to_html(embed=embed)
-        return f'<div class="grid-cell">\n{inner_html}\n</div>'
+        cls_parts = ["grid-cell"]
+        frag_attrs = ""
+        step_val = get_element_step(self)
+        if step_val is not None:
+            cls_parts.append("fragment")
+            anim = (self.animation or "fade-in").strip()
+            anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+            if anim and anim != "fade-in":
+                cls_parts.append(anim)
+            frag_attrs = f' data-fragment-index="{step_val}"'
+        return f'<div class="{" ".join(cls_parts)}"{frag_attrs}>\n{inner_html}\n</div>'
 
 
 class Grid(Element):
@@ -873,12 +1128,17 @@ class Grid(Element):
         col: Union[int, Sequence[int], str] = 2,
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
-        height: str = None
+        height: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None
     ):
+        super().__init__(step=step, animation=animation)
         self.col = col
         self.row = row
         self.gap = gap
         self.height = height
+        self.parent = parent
 
         # 列数 (num_cols) の解決
         if isinstance(col, (list, tuple)):
@@ -901,7 +1161,7 @@ class Grid(Element):
             self.num_rows = 1
 
         total_cells = max(self.num_cols * self.num_rows, 1)
-        self.cells: List[GridCell] = [GridCell(f"cell_{i}") for i in range(total_cells)]
+        self.cells: List[GridCell] = [GridCell(f"cell_{i}", parent=self.parent or self) for i in range(total_cells)]
 
     def __getitem__(self, key: Union[int, Tuple[int, int]]) -> GridCell:
         """NumPyライクな行列アクセス: g[row, col] または 1次元 g[idx]"""
