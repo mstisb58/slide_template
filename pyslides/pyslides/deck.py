@@ -66,14 +66,14 @@ class Deck:
             self._slides.append(s)
         return self
         
-    def to_html(self, output_path: str, embed: bool = True):
+    def to_html(self, output_path: str, embed: bool = True, font_embed: bool = False, font_path: str = None):
         from .renderer import render_slide_html
         from .builder import build_full_html
         
         sections = []
         any_charts = False
         for i, slide in enumerate(self._slides):
-            sec_html, is_title, has_chart = render_slide_html(slide)
+            sec_html, is_title, has_chart = render_slide_html(slide, embed=embed)
             if has_chart:
                 any_charts = True
             if i == 0 and is_title:
@@ -90,6 +90,22 @@ class Deck:
             if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
                 if slide.factory.style not in style_paths:
                     style_paths.append(slide.factory.style)
+
+        subset_font_css = ""
+        if font_embed and font_path:
+            from .font_subsetter import generate_subset
+            b64_font = generate_subset(font_path, slides_str, output_path=None)
+            if b64_font:
+                subset_font_css = f"""<style>
+@font-face {{
+    font-family: 'SubsetFont';
+    src: url('{b64_font}') format('woff2');
+    font-display: swap;
+}}
+:root {{
+    --font-main: 'SubsetFont', "BIZ UDPGothic", -apple-system, sans-serif !important;
+}}
+</style>"""
         
         final_html = build_full_html(
             slides_section_html=slides_str,
@@ -97,7 +113,9 @@ class Deck:
             single_slide=False,
             is_title_slide=(len(self._slides) > 0 and self._slides[0].template == "title"),
             has_chart=any_charts,
-            custom_style_paths=style_paths
+            custom_style_paths=style_paths,
+            export_mode="inline",
+            subset_font_css=subset_font_css
         )
         
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -151,11 +169,15 @@ class Deck:
             
         display(IFrame(src=f"./{temp_file}", width="100%", height=height))
 
-    def export_zip(self, zip_path: str):
+    def export_zip(self, *args, **kwargs):
+        """エイリアス: to_zip を使用してください"""
+        return self.to_zip(*args, **kwargs)
+
+    def to_zip(self, zip_path: str, font_embed: bool = False, font_path: str = None):
         """
         プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
         HTML 単体ではなく、画像や CSS/JS などの依存ファイルが 'assets/' や 'media/' ディレクトリとして構造化された状態で ZIP に含まれます。
-        配布先で index.html を開くだけでオフライン動作します。
+        font_embed=True を指定すると、フォントのサブセット化を実行し同梱します。
         """
         import tempfile
         import shutil
@@ -189,6 +211,23 @@ class Deck:
                     if slide.factory.style not in style_paths:
                         style_paths.append(slide.factory.style)
                         
+            subset_font_css = ""
+            if font_embed and font_path:
+                from .font_subsetter import generate_subset
+                font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
+                saved_path = generate_subset(font_path, slides_str, output_path=font_out_path)
+                if saved_path:
+                    subset_font_css = f"""<style>
+@font-face {{
+    font-family: 'SubsetFont';
+    src: url('assets/fonts/subset.woff2') format('woff2');
+    font-display: swap;
+}}
+:root {{
+    --font-main: 'SubsetFont', "BIZ UDPGothic", -apple-system, sans-serif !important;
+}}
+</style>"""
+
             final_html = build_full_html(
                 slides_section_html=slides_str,
                 title=self.title or "Presentation",
@@ -197,7 +236,8 @@ class Deck:
                 has_chart=any_charts,
                 custom_style_paths=style_paths,
                 export_mode="zip",
-                export_dir=tmp_path
+                export_dir=tmp_path,
+                subset_font_css=subset_font_css
             )
             
             with open(tmp_path / "index.html", "w", encoding="utf-8") as f:

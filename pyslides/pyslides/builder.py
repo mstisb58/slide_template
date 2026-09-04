@@ -12,7 +12,8 @@ def build_full_html(
     has_chart: bool = True,
     custom_style_paths: list = None,
     export_mode: str = "inline",
-    export_dir: Path = None
+    export_dir: Path = None,
+    subset_font_css: str = ""
 ) -> str:
     """
     1280x720 の黄金比デザインシステム、ロゴ、全CSS/JSを完全インライン化、
@@ -138,6 +139,7 @@ def build_full_html(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>{title}</title>
+  {subset_font_css}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDPMincho:wght@400;700&family=Noto+Sans+JP:wght@100..900&family=Inter:wght@100..900&display=swap" rel="stylesheet">
