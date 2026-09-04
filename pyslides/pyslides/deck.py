@@ -92,9 +92,12 @@ class Deck:
                     style_paths.append(slide.factory.style)
 
         subset_font_css = ""
-        if font_embed and font_path:
-            from .font_subsetter import generate_subset
-            b64_font = generate_subset(font_path, slides_str, output_path=None)
+        if font_embed:
+            if not font_path:
+                print("Warning: font_embed=True was specified, but font_path is missing. Skipping font subsetting.")
+            else:
+                from .font_subsetter import generate_subset
+                b64_font = generate_subset(font_path, slides_str, output_path=None)
             if b64_font:
                 subset_font_css = f"""<style>
 @font-face {{
@@ -208,10 +211,13 @@ class Deck:
                         style_paths.append(slide.factory.style)
                         
             subset_font_css = ""
-            if font_embed and font_path:
-                from .font_subsetter import generate_subset
-                font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
-                saved_path = generate_subset(font_path, slides_str, output_path=font_out_path)
+            if font_embed:
+                if not font_path:
+                    print("Warning: font_embed=True was specified, but font_path is missing. Skipping font subsetting.")
+                else:
+                    from .font_subsetter import generate_subset
+                    font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
+                    saved_path = generate_subset(font_path, slides_str, output_path=font_out_path)
                 if saved_path:
                     subset_font_css = f"""<style>
 @font-face {{
