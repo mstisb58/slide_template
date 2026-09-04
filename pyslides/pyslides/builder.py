@@ -10,10 +10,13 @@ def build_full_html(
     single_slide: bool = False,
     is_title_slide: bool = False,
     has_chart: bool = True,
-    custom_style_paths: list = None
+    custom_style_paths: list = None,
+    export_mode: str = "inline",
+    export_dir: Path = None
 ) -> str:
     """
-    1280x720 の黄金比デザインシステム、ロゴ、全CSS/JSを完全インライン化したHTMLを構築。
+    1280x720 の黄金比デザインシステム、ロゴ、全CSS/JSを完全インライン化、
+    またはZIPエクスポート用にファイル分離したHTMLを構築。
     """
     assets_dir = find_assets_dir()
     assets = get_inlined_assets(assets_dir)
@@ -45,24 +48,7 @@ def build_full_html(
 
     body_class = "is-title-slide" if (single_slide and is_title_slide) else ""
 
-    # Plotlyスクリプトの解決（プレビュー時は4.8MBの巨大インラインを避けCDNを使用）
-    if not has_chart:
-        plotly_script = ""
-    elif single_slide:
-        plotly_script = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
-    else:
-        plotly_script = f"<script>\n{assets['plotly_js']}\n</script>"
-
-    # KaTeX / Highlight.jsの解決（プレビュー時は400KB以上の巨大インラインJSを避けCDNを使用）
-    if single_slide:
-        katex_script = """  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>"""
-        highlight_script = '  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>'
-    else:
-        katex_script = f"  <script>\n{assets['katex_js']}\n{assets['katex_auto_js']}\n  </script>"
-        highlight_script = f"  <script>\n{assets['highlight_js']}\n  </script>"
-
-    # JS制御: ベースは常に custom_reveal_js を使用し、プレビュー時のみ追加設定を差し込む
+    # JS制御: ベースは常に custom_reveal_js を使用
     base_js = assets['custom_reveal_js']
     if single_slide:
         # プレビュー特有の上書き設定（コントロール表示、クリック送り）
@@ -89,19 +75,73 @@ def build_full_html(
     else:
         runtime_js = base_js
 
+    if export_mode == "zip" and export_dir:
+        # ZIPモード: アセットをファイルに書き出し、相対パスで参照
+        assets_out = Path(export_dir) / "assets"
+        (assets_out / "css").mkdir(parents=True, exist_ok=True)
+        (assets_out / "js").mkdir(parents=True, exist_ok=True)
+        
+        css_content = f"{assets['css']}\n{extra_css}"
+        with open(assets_out / "css" / "style.css", "w", encoding="utf-8") as f:
+            f.write(css_content)
+        style_html = '<link rel="stylesheet" href="assets/css/style.css">'
+        
+        with open(assets_out / "js" / "reveal.min.js", "w", encoding="utf-8") as f:
+            f.write(assets["reveal_js"])
+        reveal_html = '<script src="assets/js/reveal.min.js"></script>'
+        
+        with open(assets_out / "js" / "runtime.js", "w", encoding="utf-8") as f:
+            f.write(runtime_js)
+        runtime_html = '<script src="assets/js/runtime.js"></script>'
+        
+        if has_chart:
+            with open(assets_out / "js" / "plotly.min.js", "w", encoding="utf-8") as f:
+                f.write(assets["plotly_js"])
+            plotly_html = '<script src="assets/js/plotly.min.js"></script>'
+        else:
+            plotly_html = ""
+
+        with open(assets_out / "js" / "katex.min.js", "w", encoding="utf-8") as f:
+            f.write(assets["katex_js"])
+        with open(assets_out / "js" / "katex-auto.min.js", "w", encoding="utf-8") as f:
+            f.write(assets["katex_auto_js"])
+        katex_html = '<script src="assets/js/katex.min.js"></script>\n<script src="assets/js/katex-auto.min.js"></script>'
+        
+        with open(assets_out / "js" / "highlight.min.js", "w", encoding="utf-8") as f:
+            f.write(assets["highlight_js"])
+        highlight_html = '<script src="assets/js/highlight.min.js"></script>'
+    
+    else:
+        # インラインモード
+        style_html = f"<style>\n{assets['css']}\n{extra_css}\n</style>"
+        reveal_html = f"<script>\n{assets['reveal_js']}\n</script>"
+        runtime_html = f"<script>\n{runtime_js}\n</script>"
+        
+        if not has_chart:
+            plotly_html = ""
+        elif single_slide:
+            plotly_html = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
+        else:
+            plotly_html = f"<script>\n{assets['plotly_js']}\n</script>"
+
+        if single_slide:
+            katex_html = """  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js"></script>"""
+            highlight_html = '  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>'
+        else:
+            katex_html = f"  <script>\n{assets['katex_js']}\n{assets['katex_auto_js']}\n  </script>"
+            highlight_html = f"  <script>\n{assets['highlight_js']}\n  </script>"
+
     html = f"""<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>{title}</title>
-  <style>
-{assets['css']}
-{extra_css}
-  </style>
-  {plotly_script}
-{katex_script}
-{highlight_script}
+  {style_html}
+  {plotly_html}
+{katex_html}
+{highlight_html}
 </head>
 <body class="{body_class}">
   <div class="reveal">
@@ -110,12 +150,8 @@ def build_full_html(
 {slides_section_html}
     </div>
   </div>
-  <script>
-{assets['reveal_js']}
-  </script>
-  <script>
-{runtime_js}
-  </script>
+  {reveal_html}
+  {runtime_html}
 </body>
 </html>"""
     return html

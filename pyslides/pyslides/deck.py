@@ -140,6 +140,72 @@ class Deck:
             custom_style_paths=style_paths
         )
 
-        b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
-        data_url = f"data:text/html;base64,{b64_html}"
-        display(IFrame(src=data_url, width="100%", height=height))
+        import uuid
+        import os
+        from IPython.display import display, IFrame, HTML
+        
+        # URLの長さ上限を回避するため、一時ファイルまたはsrcdocを使用する
+        # 環境によってはローカルファイル参照がブロックされるため、HTML().srcdoc を使用するのが最も安全
+        import html
+        escaped_html = html.escape(preview_html)
+        iframe_html = f'<iframe srcdoc="{escaped_html}" width="100%" height="{height}px" style="border:none;" allowfullscreen></iframe>'
+        display(HTML(iframe_html))
+
+    def export_zip(self, zip_path: str):
+        """
+        プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
+        HTML 単体ではなく、画像や CSS/JS などの依存ファイルが 'assets/' や 'media/' ディレクトリとして構造化された状態で ZIP に含まれます。
+        配布先で index.html を開くだけでオフライン動作します。
+        """
+        import tempfile
+        import shutil
+        from pathlib import Path
+        from .elements import EXPORT_CONTEXT
+        from .renderer import render_slide_html
+        from .builder import build_full_html
+        
+        if not zip_path.endswith('.zip'):
+            zip_path += '.zip'
+            
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            
+            EXPORT_CONTEXT["export_dir"] = str(tmp_path)
+            EXPORT_CONTEXT["media_counter"] = 0
+            
+            sections = []
+            any_charts = False
+            for i, slide in enumerate(self._slides):
+                sec_html, is_title, has_chart = render_slide_html(slide, embed=False)
+                if has_chart:
+                    any_charts = True
+                sections.append(sec_html)
+                
+            slides_str = "\n".join(sections)
+            
+            style_paths = []
+            for slide in self._slides:
+                if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
+                    if slide.factory.style not in style_paths:
+                        style_paths.append(slide.factory.style)
+                        
+            final_html = build_full_html(
+                slides_section_html=slides_str,
+                title=self.title or "Presentation",
+                single_slide=False,
+                is_title_slide=(len(self._slides) > 0 and self._slides[0].template == "title"),
+                has_chart=any_charts,
+                custom_style_paths=style_paths,
+                export_mode="zip",
+                export_dir=tmp_path
+            )
+            
+            with open(tmp_path / "index.html", "w", encoding="utf-8") as f:
+                f.write(final_html)
+                
+            zip_base_name = str(Path(zip_path).with_suffix(''))
+            shutil.make_archive(zip_base_name, 'zip', tmpdir)
+            
+            EXPORT_CONTEXT["export_dir"] = None
+            
+        print(f"Presentation successfully exported to {zip_path}")

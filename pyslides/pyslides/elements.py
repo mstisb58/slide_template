@@ -6,6 +6,8 @@ import base64
 from pathlib import Path
 from typing import Union, List, Optional, Tuple, Sequence
 
+EXPORT_CONTEXT = {"export_dir": None, "media_counter": 0}
+
 def format_inline_markdown(text: str) -> str:
     """太字、イタリック、箇条書き、改行などを安全・軽量にHTMLタグへ変換する"""
     text = text.strip()
@@ -579,28 +581,55 @@ class Image(Element):
             return ""
 
         src_uri = ""
+        export_dir = EXPORT_CONTEXT.get("export_dir")
+        media_dir = None
+        if export_dir and not embed:
+            media_dir = Path(export_dir) / "media"
+            media_dir.mkdir(parents=True, exist_ok=True)
+
         # 1. PIL Image または save メソッドを持つオブジェクト
         if hasattr(self.src, "save") and callable(self.src.save):
             try:
-                buf = io.BytesIO()
                 fmt = getattr(self.src, "format", None) or "PNG"
-                self.src.save(buf, format=fmt)
-                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                src_uri = f"data:image/{fmt.lower()};base64,{b64}"
+                if media_dir:
+                    EXPORT_CONTEXT["media_counter"] += 1
+                    c = EXPORT_CONTEXT["media_counter"]
+                    filename = f"image_{c}.{fmt.lower()}"
+                    out_path = media_dir / filename
+                    self.src.save(out_path, format=fmt)
+                    src_uri = f"media/{filename}"
+                else:
+                    buf = io.BytesIO()
+                    self.src.save(buf, format=fmt)
+                    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+                    src_uri = f"data:image/{fmt.lower()};base64,{b64}"
             except Exception:
                 src_uri = ""
         # 2. ローカルファイルパスまたは文字列
         elif isinstance(self.src, (str, Path)):
             src_str = str(self.src).strip()
-            if embed and os.path.exists(src_str):
-                try:
-                    p = Path(src_str)
-                    ext = p.suffix.lower().lstrip(".")
-                    mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
-                    with open(p, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                        src_uri = f"data:{mime};base64,{b64}"
-                except Exception:
+            if os.path.exists(src_str):
+                p = Path(src_str)
+                if media_dir:
+                    import shutil
+                    filename = p.name
+                    out_path = media_dir / filename
+                    if out_path.exists():
+                        EXPORT_CONTEXT["media_counter"] += 1
+                        filename = f"{p.stem}_{EXPORT_CONTEXT['media_counter']}{p.suffix}"
+                        out_path = media_dir / filename
+                    shutil.copy2(p, out_path)
+                    src_uri = f"media/{filename}"
+                elif embed:
+                    try:
+                        ext = p.suffix.lower().lstrip(".")
+                        mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
+                        with open(p, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            src_uri = f"data:{mime};base64,{b64}"
+                    except Exception:
+                        src_uri = src_str
+                else:
                     src_uri = src_str
             else:
                 src_uri = src_str

@@ -2,11 +2,11 @@ import os
 import sys
 from pathlib import Path
 
-def _render_single_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
+def _render_single_slide_html(slide, assets_dir: Path = None, embed: bool = True) -> tuple[str, bool, bool]:
     """単一スライドの HTML (<section>...)、タイトルフラグ、チャート含有フラグを返す。直接HTMLを構築する。"""
     
     # 1. コンテナツリーを再帰的にHTML化
-    parsed_elements_html = slide.to_html(embed=True)
+    parsed_elements_html = slide.to_html(embed=embed)
     has_chart = slide.has_chart()
 
     # 2. HTMLの直接組み立て
@@ -185,7 +185,7 @@ def _render_single_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool
             content_html.append(parsed_elements_html)
         return f'<section class="{sec_cls}">\n' + "\n".join(content_html) + "\n</section>", False, has_chart
 
-def render_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
+def render_slide_html(slide, assets_dir: Path = None, embed: bool = True) -> tuple[str, bool, bool]:
     parent_html, is_title, has_chart = _render_single_slide_html(slide, assets_dir)
     
     sections = getattr(slide, 'sections', None) or getattr(slide, 'subslides', [])
