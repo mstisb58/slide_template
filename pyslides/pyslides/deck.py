@@ -169,10 +169,6 @@ class Deck:
             
         display(IFrame(src=f"./{temp_file}", width="100%", height=height))
 
-    def export_zip(self, *args, **kwargs):
-        """エイリアス: to_zip を使用してください"""
-        return self.to_zip(*args, **kwargs)
-
     def to_zip(self, zip_path: str, font_embed: bool = False, font_path: str = None):
         """
         プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
