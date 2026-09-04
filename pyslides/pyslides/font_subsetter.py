@@ -154,6 +154,8 @@ def generate_subset(font_path: str, font_number: int, html_str: str, output_path
     ]
 
     try:
+        import logging
+        logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
         fonttools_subset(args)
     except Exception as e:
         if is_base64_mode and os.path.exists(output_path):
