@@ -359,8 +359,8 @@ class Container(Element):
         self.elements.append(stamp)
         return stamp
 
-    def add_stamp(self, *args, **kwargs) -> "StampMarkdown":
-        """set_markdown のエイリアス"""
+    def set_stamp(self, *args, **kwargs) -> "StampMarkdown":
+        """set_markdown のエイリアス。レイアウト完了後に絶対座標に配置します。"""
         return self.set_markdown(*args, **kwargs)
 
     # 後方互換性プロパティ

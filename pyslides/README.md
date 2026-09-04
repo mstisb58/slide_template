@@ -142,6 +142,18 @@ deck.to_html("dist/presentation.html")
 
 ## 主要 API リファレンス
 
+### 配置メソッドの設計思想（`add_` vs `set_`）
+pyslides では、スライドへの要素追加に明確な設計思想を持たせています。
+
+- **`add_XXX()`（フロー配置）**:
+  上から順に要素を積み上げていく標準的な配置方法です。Flexbox や Grid のレイアウトフローに従い、要素が自動的に整列されます。
+  - 例: `add_markdown()`, `add_card()`, `add_grid()`, `add_graph()`, `add_point()`
+
+- **`set_XXX()`（絶対配置）**:
+  レイアウトフローとは無関係に、指定した絶対座標 (x, y) に対して「後からハンコを押すように上書き配置」するメソッドです。グラフの特定部分への注釈や、スライドの決まった位置へのスタンプなどに使用します。
+  - 例: `set_stamp()`, `set_markdown(x=100, y=200)`
+
+
 ### `add_graph(obj)` / `add_chart(obj)`
 あらゆる可視化オブジェクト（Plotly, Matplotlib, Bokeh, Altair, Pandas, 外部HTMLファイル等）を統一的にスライドまたはセル内に埋め込みます。
 
