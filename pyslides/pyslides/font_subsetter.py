@@ -150,13 +150,18 @@ def generate_subset(font_path: str, font_number: int, html_str: str, output_path
         f"--output-file={output_path}",
         "--layout-features=*",
         "--desubroutinize",
-        f"--font-number={font_number}"
+        f"--font-number={font_number}",
+        "--drop-tables+=meta"
     ]
 
     try:
         import logging
+        import warnings
+        logging.getLogger("fontTools").setLevel(logging.ERROR)
         logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
-        fonttools_subset(args)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fonttools_subset(args)
     except Exception as e:
         if is_base64_mode and os.path.exists(output_path):
             os.remove(output_path)
