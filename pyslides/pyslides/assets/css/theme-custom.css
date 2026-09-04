@@ -719,6 +719,71 @@ body.is-title-slide .slide-fixed-logo {
   transform: translateY(-1px);
 }
 
+.control-btn.laser-active {
+  background: #ff2a2a !important;
+  color: #ffffff !important;
+  border-color: #ff0033 !important;
+  box-shadow: 0 0 10px rgba(255, 42, 42, 0.7) !important;
+}
+
+/* ==========================================================================
+   レーザーポインター (Zoom/画面共有用 DOMポインター & クリック波紋)
+   ========================================================================== */
+.laser-pointer {
+  position: fixed;
+  top: -100px;
+  left: -100px;
+  width: 14px;
+  height: 14px;
+  background: radial-gradient(circle, #ffffff 15%, #ff2a2a 60%, #cc0000 100%);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 999999;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px #ffffff, 0 0 12px #ff2a2a, 0 0 24px #ff0033, 0 0 36px rgba(255, 0, 50, 0.6);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+body.laser-pointer-active .laser-pointer {
+  opacity: 1;
+}
+
+body.laser-pointer-active,
+body.laser-pointer-active * {
+  cursor: none !important;
+}
+
+body.laser-pointer-active .slide-controls-bar,
+body.laser-pointer-active .slide-controls-bar * {
+  cursor: pointer !important;
+}
+
+.laser-ripple {
+  position: fixed;
+  width: 24px;
+  height: 24px;
+  border: 2px solid #ff2a2a;
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 999998;
+  transform: translate(-50%, -50%) scale(0.5);
+  box-shadow: 0 0 10px #ff0033;
+  animation: laser-ripple-anim 0.45s ease-out forwards;
+}
+
+@keyframes laser-ripple-anim {
+  0% {
+    transform: translate(-50%, -50%) scale(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(3.2);
+    opacity: 0;
+  }
+}
+
+
 /* ==========================================================================
    8. 箇条書き・リスト (インデント内部要素 & 行間対応)
    ========================================================================== */

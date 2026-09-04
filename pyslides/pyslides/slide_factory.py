@@ -15,3 +15,25 @@ class SlideFactory:
         新しいスライドを生成する。
         """
         return Slide(template=template, factory=self, **kwargs)
+
+    def create_section(self, parent: Slide, template: Optional[str] = None, name: Optional[str] = None, **kwargs) -> Slide:
+        """
+        セクション（縦方向スライド/サブスライド）を生成し、親スライドに紐づける。
+        template や title はデフォルトで親のものを引き継ぐ。
+        """
+        if template is None:
+            template = parent.template
+            
+        if "title" not in kwargs and hasattr(parent, "title"):
+            kwargs["title"] = parent.title
+            
+        sub = self.create_slide(template=template, **kwargs)
+        parent.sections.append(sub)
+        if name:
+            setattr(parent, name, sub)
+        return sub
+
+    def create_subslide(self, parent: Slide, template: Optional[str] = None, name: Optional[str] = None, **kwargs) -> Slide:
+        """create_section のエイリアス"""
+        return self.create_section(parent, template=template, name=name, **kwargs)
+

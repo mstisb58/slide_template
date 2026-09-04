@@ -35,6 +35,105 @@ Reveal.addKeyBinding({ keyCode: 70, key: 'F', description: 'Toggle Fullscreen' }
   toggleFullscreen();
 });
 
+// --- レーザーポインター機能 (Zoom/画面共有用 DOMポインター & クリック波紋) ---
+(function() {
+  let isLaserActive = false;
+  let laserPointerEl = null;
+
+  function initLaserPointer() {
+    // 1. ポインター要素の生成
+    if (!laserPointerEl) {
+      laserPointerEl = document.createElement('div');
+      laserPointerEl.className = 'laser-pointer';
+      document.body.appendChild(laserPointerEl);
+    }
+
+    // 2. コントロールバーの確認・ボタン追加
+    let controlsBar = document.querySelector('.slide-controls-bar');
+    if (!controlsBar) {
+      controlsBar = document.createElement('div');
+      controlsBar.className = 'slide-controls-bar';
+      document.body.appendChild(controlsBar);
+    }
+
+    if (!document.getElementById('btn-laser')) {
+      const laserBtn = document.createElement('button');
+      laserBtn.className = 'control-btn';
+      laserBtn.id = 'btn-laser';
+      laserBtn.title = 'レーザーポインター (L)';
+      laserBtn.innerHTML = '🔴 ポインター';
+      laserBtn.onclick = toggleLaserPointer;
+      controlsBar.appendChild(laserBtn);
+    }
+
+    // 3. マウス追従
+    window.addEventListener('mousemove', function(e) {
+      if (!isLaserActive || !laserPointerEl) return;
+      laserPointerEl.style.left = e.clientX + 'px';
+      laserPointerEl.style.top = e.clientY + 'px';
+    });
+
+    // 画面外に出たときの処理
+    document.addEventListener('mouseleave', function() {
+      if (laserPointerEl) laserPointerEl.style.opacity = '0';
+    });
+    document.addEventListener('mouseenter', function() {
+      if (laserPointerEl && isLaserActive) laserPointerEl.style.opacity = '1';
+    });
+
+    // 4. クリック時の波紋（Ripple）エフェクト
+    window.addEventListener('mousedown', function(e) {
+      if (!isLaserActive) return;
+      if (e.target.closest && e.target.closest('.control-btn')) return;
+
+      createLaserRipple(e.clientX, e.clientY);
+    });
+  }
+
+  function createLaserRipple(x, y) {
+    const ripple = document.createElement('div');
+    ripple.className = 'laser-ripple';
+    ripple.style.left = x + 'px';
+    ripple.style.top = y + 'px';
+    document.body.appendChild(ripple);
+    setTimeout(function() {
+      if (ripple.parentNode) ripple.parentNode.removeChild(ripple);
+    }, 500);
+  }
+
+  function toggleLaserPointer() {
+    isLaserActive = !isLaserActive;
+    document.body.classList.toggle('laser-pointer-active', isLaserActive);
+
+    const btn = document.getElementById('btn-laser');
+    if (btn) {
+      btn.classList.toggle('laser-active', isLaserActive);
+    }
+
+    if (!isLaserActive && laserPointerEl) {
+      laserPointerEl.style.opacity = '0';
+    } else if (isLaserActive && laserPointerEl) {
+      laserPointerEl.style.opacity = '1';
+    }
+  }
+
+  window.toggleLaserPointer = toggleLaserPointer;
+
+  // Reveal.js キーバインド登録 (L キー)
+  if (typeof Reveal !== 'undefined' && Reveal.addKeyBinding) {
+    Reveal.addKeyBinding({ keyCode: 76, key: 'L', description: 'Toggle Laser Pointer' }, function() {
+      toggleLaserPointer();
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLaserPointer);
+  } else {
+    initLaserPointer();
+  }
+})();
+
+
 // シンタックスハイライト & 数式レンダリング
 function initEnhancements() {
   if (typeof hljs !== 'undefined') {

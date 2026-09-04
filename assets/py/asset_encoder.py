@@ -75,23 +75,6 @@ def resolve_includes(html_content: str, base_dir: Path, is_embed: bool = False) 
             with open(target_file, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # 1. 不要な外枠タグ・ヘッダー・CDNスクリプトを除去
-            content = re.sub(r'<!DOCTYPE.*?>', '', content, flags=re.IGNORECASE)
-            content = re.sub(r'</?(?:html|head|body)[^>]*>', '', content, flags=re.IGNORECASE)
-            content = re.sub(r'<meta[^>]*>', '', content, flags=re.IGNORECASE)
-            content = re.sub(r'<script\s+[^>]*src=["\'][^"\']*plotly[^"\']*["\'][^>]*>\s*</script>', '', content, flags=re.IGNORECASE)
-
-            # Plotlyの描画スクリプトをスライド表示時まで遅延実行させるため、型を text/plain に変更
-            content = re.sub(
-                r'<script(?:\s+type=["\']text/javascript["\'])?>',
-                '<script type="text/plain" class="plotly-delayed-script">',
-                content,
-                flags=re.IGNORECASE
-            )
-
-            # 2. 一番外側のPlotly固定幅ラッパーdiv（height:...; width:...;）を100%に正規化
-            content = re.sub(r'<div\s+style="[^"]*?(?:height:\s*\d+px|width:\s*\d+px)[^"]*">', '<div style="width:100%; height:100%; position:relative;">', content, count=1, flags=re.IGNORECASE)
-
             w_val = "100%"
             h_val = "100%"
             for p in opt_parts:
@@ -111,8 +94,14 @@ def resolve_includes(html_content: str, base_dir: Path, is_embed: bool = False) 
                     h = p if p.endswith("px") else p + "px"
                     h_val = h
 
-            style_attr = f'style="width: {w_val}; height: {h_val}; overflow: hidden; position: relative; margin: 0 auto;"'
-            return f'<div class="included-chart-container" {style_attr}>\n{content.strip()}\n</div>'
+            try:
+                from pyslides.pyslides.utils import normalize_embedded_html
+            except ImportError:
+                import sys
+                sys.path.insert(0, str(base_dir))
+                from pyslides.pyslides.utils import normalize_embedded_html
+                
+            return normalize_embedded_html(content, width=w_val, height=h_val)
         else:
             return f'<div style="color:red; border:1px solid red; padding:10px;">[Include Error] ファイルが見つかりません: {rel_path}</div>'
 

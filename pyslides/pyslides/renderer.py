@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-def render_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
+def _render_single_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
     """単一スライドの HTML (<section>...)、タイトルフラグ、チャート含有フラグを返す。直接HTMLを構築する。"""
     
     # 1. コンテナツリーを再帰的にHTML化
@@ -177,7 +177,6 @@ def render_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
             content_html.append(parsed_elements_html)
         return f'<section class="{sec_cls}">\n' + "\n".join(content_html) + "\n</section>", False, has_chart
 
-    # --- 5. ユーザー定義カスタムテンプレート (grid3 など任意名) ---
     else:
         sec_cls = f'{slide.template}-section {slide.template}{theme_cls}'
         if slide.title:
@@ -185,3 +184,22 @@ def render_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
         if parsed_elements_html:
             content_html.append(parsed_elements_html)
         return f'<section class="{sec_cls}">\n' + "\n".join(content_html) + "\n</section>", False, has_chart
+
+def render_slide_html(slide, assets_dir: Path = None) -> tuple[str, bool, bool]:
+    parent_html, is_title, has_chart = _render_single_slide_html(slide, assets_dir)
+    
+    sections = getattr(slide, 'sections', None) or getattr(slide, 'subslides', [])
+    if not sections:
+        return parent_html, is_title, has_chart
+        
+    html_parts = ["<section>"]
+    html_parts.append(parent_html)
+    
+    for sub in sections:
+        sub_html, _, sub_has_chart = render_slide_html(sub, assets_dir)
+        html_parts.append(sub_html)
+        if sub_has_chart:
+            has_chart = True
+            
+    html_parts.append("</section>")
+    return "\n".join(html_parts), is_title, has_chart

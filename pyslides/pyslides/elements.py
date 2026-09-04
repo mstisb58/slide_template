@@ -426,34 +426,8 @@ class HTMLEmbed(Element):
                 with open(stripped, "r", encoding="utf-8") as f:
                     content = f.read()
 
-                # 1. 不要な外枠タグ・ヘッダー・重複CDNスクリプトを除去
-                content = re.sub(r'<!DOCTYPE.*?>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'</?(?:html|head|body)[^>]*>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'<meta[^>]*>', '', content, flags=re.IGNORECASE)
-                content = re.sub(r'<script\s+[^>]*src=["\'][^"\']*plotly[^"\']*["\'][^>]*>\s*</script>', '', content, flags=re.IGNORECASE)
-
-                # 2. Plotlyの描画スクリプトをスライド表示時まで遅延実行させるため、型を text/plain に変更
-                content = re.sub(
-                    r'<script(?:\s+type=["\']text/javascript["\'])?>',
-                    '<script type="text/plain" class="plotly-delayed-script">',
-                    content,
-                    flags=re.IGNORECASE
-                )
-
-                # 3. 一番外側のPlotly固定幅ラッパーdiv（height:...; width:...;）を100%に正規化
-                content = re.sub(
-                    r'<div\s+style="[^"]*?(?:height:\s*\d+px|width:\s*\d+px)[^"]*">',
-                    '<div style="width:100%; height:100%; position:relative;">',
-                    content,
-                    count=1,
-                    flags=re.IGNORECASE
-                )
-
-                # 4. included-chart-container でラップ
-                w = self.width if (self.width.endswith("%") or self.width.endswith("px")) else f"{self.width}px"
-                h = self.height if (self.height.endswith("%") or self.height.endswith("px")) else f"{self.height}px"
-                style_attr = f'style="width: {w}; height: {h}; overflow: hidden; position: relative; margin: 0 auto;"'
-                return f'<div class="included-chart-container" {style_attr}>\n{content.strip()}\n</div>'
+                from .utils import normalize_embedded_html
+                return normalize_embedded_html(content, width=self.width, height=self.height)
             except Exception as e:
                 return f"<div>Error loading HTML file: {stripped} ({e})</div>"
                 

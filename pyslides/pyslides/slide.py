@@ -42,6 +42,7 @@ class Slide(Container):
         self.template = template
         self.factory = factory
         self.deck = None
+        self.sections = []
         self.attributes = {
             "title": title,
             "author": author,
@@ -49,6 +50,14 @@ class Slide(Container):
             "subtitle": subtitle,
             **kwargs
         }
+
+    @property
+    def subslides(self):
+        return self.sections
+
+    @subslides.setter
+    def subslides(self, value):
+        self.sections = value
 
     def __getattr__(self, name):
         # self.__dict__ を直接参照して __getattr__ の無限再帰を完全に防止
@@ -58,7 +67,7 @@ class Slide(Container):
         raise AttributeError(f"'Slide' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ("template", "factory", "deck", "attributes", "elements"):
+        if name in ("template", "factory", "deck", "attributes", "elements", "sections"):
             super().__setattr__(name, value)
         else:
             attrs = self.__dict__.get("attributes")
@@ -74,6 +83,7 @@ class Slide(Container):
             **copy.copy(self.attributes)
         )
         new_slide.elements = copy.copy(self.elements)
+        new_slide.sections = copy.copy(self.sections)
         return new_slide
 
     def __deepcopy__(self, memo):
@@ -84,6 +94,7 @@ class Slide(Container):
             **copy.deepcopy(self.attributes, memo)
         )
         new_slide.elements = copy.deepcopy(self.elements, memo)
+        new_slide.sections = copy.deepcopy(self.sections, memo)
         return new_slide
 
     # 属性アクセサ
