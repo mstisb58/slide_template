@@ -1,12 +1,12 @@
-// Reveal.jsの初期化
+// Reveal.jsの初期化 (1920x1080 16:9 Full HD 最適化)
 Reveal.initialize({
   hash: true,
   slideNumber: 'c/t',
   showSlideNumber: 'all',
   transition: 'slide',
   center: false,
-  width: 1280,
-  height: 720,
+  width: 1920,
+  height: 1080,
   margin: 0,
   minScale: 0.1,
   maxScale: 4.0
@@ -48,23 +48,59 @@ Reveal.addKeyBinding({ keyCode: 70, key: 'F', description: 'Toggle Fullscreen' }
       document.body.appendChild(laserPointerEl);
     }
 
-    // 2. コントロールバーの確認・ボタン追加
+    // 2. コントロールバーの初期化・F, L, O ボタンの追加
     let controlsBar = document.querySelector('.slide-controls-bar');
     if (!controlsBar) {
       controlsBar = document.createElement('div');
       controlsBar.className = 'slide-controls-bar';
       document.body.appendChild(controlsBar);
     }
+    controlsBar.innerHTML = '';
 
-    if (!document.getElementById('btn-laser')) {
-      const laserBtn = document.createElement('button');
-      laserBtn.className = 'control-btn';
-      laserBtn.id = 'btn-laser';
-      laserBtn.title = 'レーザーポインター (L)';
-      laserBtn.innerHTML = '🔴 ポインター';
-      laserBtn.onclick = toggleLaserPointer;
-      controlsBar.appendChild(laserBtn);
+    // F (全画面表示)
+    const btnF = document.createElement('button');
+    btnF.className = 'control-btn';
+    btnF.id = 'btn-fullscreen';
+    btnF.title = '全画面表示 (F)';
+    btnF.textContent = 'F';
+    btnF.onclick = toggleFullscreen;
+    controlsBar.appendChild(btnF);
+
+    // L (レーザーポインター)
+    const btnL = document.createElement('button');
+    btnL.className = 'control-btn';
+    btnL.id = 'btn-laser';
+    btnL.title = 'レーザーポインター (L)';
+    btnL.textContent = 'L';
+    btnL.onclick = toggleLaserPointer;
+    controlsBar.appendChild(btnL);
+
+    // O (タイル一覧/概要)
+    const btnO = document.createElement('button');
+    btnO.className = 'control-btn';
+    btnO.id = 'btn-overview';
+    btnO.title = 'タイル一覧 (O / ESC)';
+    btnO.textContent = 'O';
+    btnO.onclick = function() {
+      if (typeof Reveal !== 'undefined' && Reveal.toggleOverview) {
+        Reveal.toggleOverview();
+      }
+    };
+    controlsBar.appendChild(btnO);
+
+    // 状態変更時のスタイル同期
+    if (typeof Reveal !== 'undefined' && Reveal.on) {
+      Reveal.on('overviewshown', function() { btnO.classList.add('is-active'); });
+      Reveal.on('overviewhidden', function() { btnO.classList.remove('is-active'); });
     }
+    document.addEventListener('fullscreenchange', function() {
+      if (document.fullscreenElement) {
+        btnF.classList.add('is-active');
+      } else {
+        btnF.classList.remove('is-active');
+      }
+    });
+
 
     // 3. マウス追従
     window.addEventListener('mousemove', function(e) {

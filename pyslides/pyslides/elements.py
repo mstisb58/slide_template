@@ -254,8 +254,27 @@ class Container(Element):
         self.elements.append(md)
         return md
 
-    def add_card(self, color: str = None, bg: str = None, height: str = None) -> "Card":
-        card = Card(color=color, bg=bg, height=height)
+    def add_card(
+        self,
+        color: str = None,
+        bg: str = None,
+        height: str = None,
+        border: str = None,
+        border_color: str = None,
+        text_color: str = None,
+        style: str = None,
+        **kwargs
+    ) -> "Card":
+        card = Card(
+            color=color,
+            bg=bg,
+            height=height,
+            border=border,
+            border_color=border_color,
+            text_color=text_color,
+            style=style,
+            **kwargs
+        )
         self.elements.append(card)
         return card
 
@@ -323,6 +342,27 @@ class Container(Element):
         self.elements.append(point)
         return point
 
+    def set_markdown(
+        self,
+        text: str = "",
+        x: Union[int, float, str] = 0,
+        y: Union[int, float, str] = 0,
+        **kwargs
+    ) -> "StampMarkdown":
+        """
+        スライド上の指定座標 (x, y) にテキスト・マークダウンを絶対配置（スタンプ）する。
+        レイアウトの流れを崩さず、グラフや表の上に「↓ココ」「注目！」などの注釈をハンコのように押すことができます。
+        """
+        if "str" in kwargs and not text:
+            text = kwargs.pop("str")
+        stamp = StampMarkdown(text=text, x=x, y=y, **kwargs)
+        self.elements.append(stamp)
+        return stamp
+
+    def add_stamp(self, *args, **kwargs) -> "StampMarkdown":
+        """set_markdown のエイリアス"""
+        return self.set_markdown(*args, **kwargs)
+
     # 後方互換性プロパティ
     @property
     def markdown(self) -> str:
@@ -362,6 +402,94 @@ class Markdown(Element):
 
     def to_html(self, embed: bool = True) -> str:
         return format_inline_markdown(self.text)
+
+
+class StampMarkdown(Element):
+    """
+    スライド上の指定座標 (x, y) に絶対配置（スタンプ）するテキスト・マークダウン要素。
+    既存のレイアウト（グラフや表など）の流れを崩さず、上からハンコを押すように注釈や矢印を配置できます。
+    """
+    def __init__(
+        self,
+        text: str = "",
+        x: Union[int, float, str] = 0,
+        y: Union[int, float, str] = 0,
+        color: Optional[str] = None,
+        font_size: Optional[str] = None,
+        font_weight: Optional[str] = None,
+        bg_color: Optional[str] = None,
+        background: Optional[str] = None,
+        border: Optional[str] = None,
+        border_radius: Optional[str] = None,
+        padding: Optional[str] = None,
+        rotate: Optional[Union[int, float, str]] = None,
+        z_index: int = 100,
+        pointer_events: str = "none",
+        css_class: str = "",
+        class_name: str = "",
+        style: Optional[str] = None,
+        **kwargs
+    ):
+        self.text = text
+        self.x = f"{x}px" if isinstance(x, (int, float)) else str(x)
+        self.y = f"{y}px" if isinstance(y, (int, float)) else str(y)
+        self.color = color
+        self.font_size = font_size
+        self.font_weight = font_weight
+        self.bg_color = bg_color or background
+        self.border = border
+        self.border_radius = border_radius
+        self.padding = padding
+        self.rotate = rotate
+        self.z_index = z_index
+        self.pointer_events = pointer_events
+        self.css_class = css_class or class_name
+        self.custom_style = style
+        self.extra_kwargs = kwargs
+
+    def to_html(self, embed: bool = True) -> str:
+        if not self.text:
+            return ""
+
+        styles = [
+            "position: absolute",
+            f"left: {self.x}",
+            f"top: {self.y}",
+            f"z-index: {self.z_index}",
+            f"pointer-events: {self.pointer_events}",
+        ]
+
+        if self.color:
+            styles.append(f"color: {self.color}")
+        if self.font_size:
+            styles.append(f"font-size: {self.font_size}")
+        if self.font_weight:
+            styles.append(f"font-weight: {self.font_weight}")
+        if self.bg_color:
+            styles.append(f"background: {self.bg_color}")
+        if self.border:
+            styles.append(f"border: {self.border}")
+        if self.border_radius:
+            styles.append(f"border-radius: {self.border_radius}")
+        if self.padding:
+            styles.append(f"padding: {self.padding}")
+        if self.rotate is not None:
+            rot_val = f"{self.rotate}deg" if isinstance(self.rotate, (int, float)) else str(self.rotate)
+            styles.append(f"transform: rotate({rot_val})")
+        if self.custom_style:
+            styles.append(self.custom_style.strip().rstrip(";"))
+
+        style_str = "; ".join(styles)
+        classes = ["slide-stamp"]
+        if self.css_class:
+            classes.append(self.css_class)
+        class_attr = " ".join(classes)
+
+        inner_html = format_inline_markdown(self.text)
+        return f'<div class="{class_attr}" style="{style_str}">{inner_html}</div>'
+
+    def has_chart(self) -> bool:
+        return False
 
 
 class Graph(Element):
@@ -500,30 +628,169 @@ class Image(Element):
         return f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
 
 
+def _is_dark_color(c: str) -> bool:
+    if not isinstance(c, str):
+        return False
+    c_clean = c.strip().lstrip("#")
+    if len(c_clean) == 3:
+        c_clean = "".join([ch * 2 for ch in c_clean])
+    if len(c_clean) == 6:
+        try:
+            r = int(c_clean[0:2], 16)
+            g = int(c_clean[2:4], 16)
+            b = int(c_clean[4:6], 16)
+            return (r * 299 + g * 587 + b * 114) / 1000 < 128
+        except ValueError:
+            return False
+    return False
+
+
+CARD_PALETTE_MAP = {
+    # Yellow / Accent
+    "yellow": "card-yellow",
+    "soft_yellow": "card-soft-yellow",
+    "soft-yellow": "card-soft-yellow",
+    "yellow_soft": "card-soft-yellow",
+    "yellow-soft": "card-soft-yellow",
+    "accent_soft": "card-soft-yellow",
+    "accent-soft": "card-soft-yellow",
+    "accent_light": "card-yellow",
+    "accent-light": "card-yellow",
+    "accent": "card-yellow",
+    "primary_accent": "card-yellow",
+    "primary-accent": "card-yellow",
+
+    # Blue / Sub Accent
+    "blue": "card-blue",
+    "soft_blue": "card-soft-blue",
+    "soft-blue": "card-soft-blue",
+    "blue_soft": "card-soft-blue",
+    "blue-soft": "card-soft-blue",
+    "sub_accent": "card-blue",
+    "sub-accent": "card-blue",
+    "sub_accent_light": "card-soft-blue",
+    "sub-accent-light": "card-soft-blue",
+    "accent_blue": "card-blue",
+    "accent-blue": "card-blue",
+    "accent_blue_soft": "card-soft-blue",
+    "accent-blue-soft": "card-soft-blue",
+    "accent_blue_light": "card-soft-blue",
+    "accent-blue-light": "card-soft-blue",
+
+    # Red
+    "red": "card-red",
+    "soft_red": "card-soft-red",
+    "soft-red": "card-soft-red",
+    "red_soft": "card-soft-red",
+    "red-soft": "card-soft-red",
+    "color_red": "card-red",
+    "color-red": "card-red",
+    "color_red_soft": "card-soft-red",
+    "color-red-soft": "card-soft-red",
+
+    # Green
+    "green": "card-green",
+    "soft_green": "card-soft-green",
+    "soft-green": "card-soft-green",
+    "green_soft": "card-soft-green",
+    "green-soft": "card-soft-green",
+    "color_green": "card-green",
+    "color-green": "card-green",
+    "color_green_soft": "card-soft-green",
+    "color-green-soft": "card-soft-green",
+
+    # Gold / Amber
+    "gold": "card-gold",
+    "soft_gold": "card-soft-gold",
+    "soft-gold": "card-soft-gold",
+    "gold_soft": "card-soft-gold",
+    "gold-soft": "card-soft-gold",
+    "color_gold": "card-gold",
+    "color-gold": "card-gold",
+    "color_gold_soft": "card-soft-gold",
+    "color-gold-soft": "card-soft-gold",
+    "accent_dark": "card-gold",
+    "accent-dark": "card-gold",
+
+    # Gray / Slate
+    "gray": "card-gray",
+    "grey": "card-gray",
+    "slate": "card-gray",
+    "light": "card-gray",
+
+    # Purple
+    "purple": "card-purple",
+    "violet": "card-purple",
+
+    # Dark / Black
+    "dark": "card-dark",
+    "black": "card-dark",
+    "bg_dark": "card-dark",
+    "bg-dark": "card-dark",
+}
+
+
 class Card(Container):
-    def __init__(self, color: str = None, bg: str = None, height: str = None):
+    def __init__(
+        self,
+        color: str = None,
+        bg: str = None,
+        height: str = None,
+        border: str = None,
+        border_color: str = None,
+        text_color: str = None,
+        style: str = None,
+        **kwargs
+    ):
         super().__init__()
         self.color = color.lower() if color else None
         self.bg = bg
         self.height = height
+        self.border = border
+        self.border_color = border_color
+        self.text_color = text_color
+        self.custom_style = style
+        self.extra_kwargs = kwargs
 
     def to_html(self, embed: bool = True) -> str:
         cls_parts = ["card"]
         styles = []
 
-        known_colors = {"yellow", "red", "blue", "green", "gold"}
-        if self.color and self.color != "none":
-            if self.color in known_colors:
-                cls_parts.append(f"card-{self.color}")
+        target_color = (self.bg or self.color or "").strip()
+        if target_color and target_color != "none":
+            norm_key = target_color.lower().replace("-", "_")
+            if norm_key in CARD_PALETTE_MAP:
+                cls_parts.append(CARD_PALETTE_MAP[norm_key])
+            elif target_color.startswith("var(") or target_color.startswith("--"):
+                c_val = target_color if target_color.startswith("var(") else f"var({target_color})"
+                styles.append(f"background: {c_val};")
+            elif target_color.startswith("#") or target_color.startswith("rgb") or target_color.startswith("hsl"):
+                # 任意のCSSカラー指定（HEXカラー #001122 や rgba など）
+                styles.append(f"background: {target_color};")
+                # 暗い背景色の場合は自動で白文字＆透過ボーダーに調整して可読性を維持
+                if _is_dark_color(target_color) and not self.text_color:
+                    styles.append("color: #f8fafc;")
+                    if not self.border and not self.border_color:
+                        styles.append("border-color: rgba(255, 255, 255, 0.18);")
             else:
-                # 任意のCSSカラー指定（HEXカラーやrgbaなど）
-                styles.append(f"background: {self.color};")
+                # 未知の名前でも CSS変数 var(--...) として解決を試みる（例: laser_color -> var(--laser-color)）
+                css_var = target_color.replace("_", "-")
+                styles.append(f"background: var(--{css_var}, {target_color});")
+                cls_parts.append(f"card-{css_var}")
 
-        if self.bg:
-            styles.append(f"background: {self.bg};")
+        if self.text_color:
+            styles.append(f"color: {self.text_color};")
+        if self.border:
+            styles.append(f"border: {self.border};")
+        elif self.border_color:
+            styles.append(f"border-color: {self.border_color};")
+
         if self.height:
-            h = self.height if (self.height.endswith("px") or self.height.endswith("%")) else f"{self.height}px"
+            h = self.height if (self.height.endswith("px") or self.height.endswith("%") or self.height.endswith("vh")) else f"{self.height}px"
             styles.append(f"height: {h}; min-height: {h};")
+
+        if self.custom_style:
+            styles.append(self.custom_style.strip().rstrip(";"))
 
         style_attr = f' style="{" ".join(styles)}"' if styles else ""
         inner_html = super().to_html(embed=embed)

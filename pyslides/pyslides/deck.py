@@ -105,7 +105,7 @@ class Deck:
         print(f"Presentation saved to {output_path}")
 
     def show(self, height=540):
-        """Preview the entire presentation deck with all slides and animations in Jupyter Notebook"""
+        """Preview the entire presentation deck with all slides and animations in Jupyter Notebook (1920x1080, 16:9 Full HD)"""
         from IPython.display import display, IFrame
         import base64
         from .renderer import render_slide_html
@@ -142,10 +142,4 @@ class Deck:
 
         b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
         data_url = f"data:text/html;base64,{b64_html}"
-        if len(data_url) < 2000000:
-            display(IFrame(src=data_url, width="100%", height=height))
-        else:
-            import html
-            from IPython.display import HTML
-            escaped = html.escape(preview_html, quote=True)
-            display(HTML(f'<iframe srcdoc="{escaped}" width="100%" height="{height}" frameborder="0" allowfullscreen style="border:none; width:100%; height:{height}px;"></iframe>'))
+        display(IFrame(src=data_url, width="100%", height=height))

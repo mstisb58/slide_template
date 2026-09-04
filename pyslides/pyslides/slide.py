@@ -171,8 +171,8 @@ class Slide(Container):
     def grid(self, col: Union[int, str] = 2, row: Union[int, str] = 1, gap: str = "16px", height: str = None) -> Grid:
         return self.add_grid(col=col, row=row, gap=gap, height=height)
 
-    def show(self, height=520):
-        """Preview this slide in Jupyter Notebook with 1280x720 Golden Ratio Design System"""
+    def show(self, height=540):
+        """Preview this slide in Jupyter Notebook with 1920x1080 (16:9 Full HD) Design System"""
         from IPython.display import display, IFrame
         import base64
         from .renderer import render_slide_html
@@ -192,10 +192,4 @@ class Slide(Container):
 
         b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
         data_url = f"data:text/html;base64,{b64_html}"
-        if len(data_url) < 2000000:
-            display(IFrame(src=data_url, width="100%", height=height))
-        else:
-            import html
-            from IPython.display import HTML
-            escaped = html.escape(preview_html, quote=True)
-            display(HTML(f'<iframe srcdoc="{escaped}" width="100%" height="{height}" frameborder="0" allowfullscreen style="border:none; width:100%; height:{height}px;"></iframe>'))
+        display(IFrame(src=data_url, width="100%", height=height))
