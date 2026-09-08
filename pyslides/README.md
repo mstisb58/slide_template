@@ -116,6 +116,14 @@ s3_g[2].card.add_markdown("""
 s3.add_memo("**日本独自の発展（古方派）**：中国の思弁的な理論に対し、日本の江戸時代（吉益東洞ら）の実証的な漢方医学において、病態をシンプルに捉える指標として発展・体系化。")
 
 s3.show()
+
+# --- サブスライド（縦スライド: ↓キーで詳細へ） ---
+# 親スライド（s3）を指定してぶら下げるだけで作成可能
+s3_sub1 = factory.create_subslide(s3, title="背景補足：古方派と後世派の違い")
+s3_sub1.add_markdown("中国医学の思弁的な理論を排し、実践的な方証相対を重視したのが古方派の特徴。")
+
+s3_sub2 = factory.create_subslide(s3, title="背景補足：気血水スコアの算出基準")
+s3_sub2.add_markdown("アンケート回答からスコアを算出する重み付けアルゴリズムの定義。")
 ```
 
 ---
@@ -177,17 +185,56 @@ g[1].add_image(img_path="graph/taishitu.png", caption="漢方体質分類図")
 ### スライド拡張 API (`Slide` / `Container`)
 `SlideFactory` で作成されたスライドには、後から動的に様々な要素を追加できます。
 
-- `add_markdown(text)`: マークダウン形式のテキストを追加
+- `add_markdown(text, step=False, fragment=False)`: マークダウン形式のテキストを追加
 - `add_grid(col=2, row=1)`: グリッドコンテナを追加し、要素を分割配置
+- `add_card(color=None, fragment=False)`: スタイリングされたカードを追加
 - `add_chart(fig)` / `add_graph(fig)`: Plotly等のグラフオブジェクトを追加
 - `add_image(path)`: 組み込みの画像を追加
+- `add_memo(text)`: メモボックスを追加
+- `add_point(text)`: ポイント強調ボックスを追加
+- `set_markdown(text, x, y)`: 指定座標にスタンプ注釈を追加
 
+### フラグメントアニメーション（Reveal.js Fragments）
+クリックやキー入力で要素を段階的に表示・アニメーションさせる機能です。
+
+#### 1. 箇条書きや段落のステップ表示 (`step=True`)
 ```python
-# タイトルスライドであっても後から自由に要素を足すことが可能
-g = s1.add_grid(col=2)
-g[0].add_markdown("左カラム")
-g[1].add_markdown("右カラム")
+# 箇条書きを1行ずつ段階的にフェードイン
+s.add_markdown("""
+- 項目1：最初のクリックで表示
+- 項目2：2回目のクリックで表示
+- 項目3：3回目のクリックで表示
+""", step=True)
+
+# アニメーション効果を指定する場合 (fade-up, fade-left 等)
+s.add_markdown("段落A\n\n段落B", step="fade-up")
 ```
+
+#### 2. 要素・コンテナごとのフラグメント指定 (`fragment=...`)
+Card、Image、Graph、Table、Memo、Point、GridCell などの全要素で利用可能です。
+```python
+# カードをフェードアップで表示
+card = s.add_card("soft-blue", fragment="fade-up")
+
+# メソッドチェーン (.as_fragment) で後から指定
+img = s.add_image("photo.png").as_fragment("zoom-in")
+
+# グリッドセル単位での出現アニメーション
+g = s.add_grid(col=2)
+g[0].as_fragment("fade-right")  # 左セルが右からスライドイン
+g[1].as_fragment("fade-left")   # 右セルが左からスライドイン
+
+# 表示順序（同期・順序制御: data-fragment-index）の指定
+s.add_card("yellow", fragment="fade-up", fragment_index=1)
+s.add_image("chart.png", fragment="fade-up", fragment_index=1) # 同時に出現！
+```
+
+**利用可能なアニメーション効果**:
+- `fade-in`（デフォルト）
+- `fade-up`, `fade-down`, `fade-left`, `fade-right`
+- `zoom-in`, `grow`, `shrink`
+- `fade-out`, `fade-in-then-out`, `fade-in-then-semi-out`
+- `highlight-red`, `highlight-green`, `highlight-blue`, `highlight-current-red`
 
 ### `Deck(slides=None, title="...", style=None)`
 プレゼンテーション全体を統括・出力するコンテナクラス。
@@ -198,4 +245,4 @@ g[1].add_markdown("右カラム")
   - `append(slide: Slide)`: スライドを末尾に追加
   - `extend(slides: list)`: 複数のスライドを末尾に追加
   - `show(height=540)`: ノートブック上で全スライドをプレビュー表示（キーボード・クリック送り対応）
-  - `to_html(output_path: str)`: 完全自己完結型の HTML ファイルを出力
+  - `to_html(output_path: str = None)`: 完全自己完結型の HTML ファイルを出力（パス省略時はHTML文字列を返却）

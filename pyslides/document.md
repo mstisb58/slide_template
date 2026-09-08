@@ -115,6 +115,19 @@ Plotly は非表示要素（`display: none` または画面外のスライド）
 - **`Card.add_image(pil_img)`**: PIL の Image オブジェクトを直接渡せば、自動でインメモリ Base64 エンコードされて `<img src="data:image/png;base64,...">` として埋め込まれます。
 - **多段構成**: カードの外（下）に `s_g[0].add_markdown(...)` で注釈を付けたり、スライド全体に `s.add_memo(...)` を配置するなど、直感的な Python コードのネストで自由自在なレイアウトを構築できます。
 
+### (5) フラグメントアニメーション（Reveal.js Fragments）の統合アーキテクチャ
+
+すべての要素の基底クラスである `Element` にフラグメント制御（`fragment`, `fragment_index`, `as_fragment()`, `wrap_fragment()`）を統合しました。
+
+1. **インテリジェントなルートタグ注入 (`wrap_fragment`)**:
+   - 余計な外枠 `<div>` の二重ラップを回避するため、`Card`, `GridCell`, `Image`, `Table`, `Graph` などの単一外枠要素では、ルートタグ（`<div class="card...">` など）の `class` 属性に正規表現で直接 `fragment {effect}` を追記し、`data-fragment-index` を付与します。
+   - これにより、CSS グリッドレイアウトや Flexbox の親子関係（`.custom-grid > .grid-cell > .card`）の崩れを完全に防ぎます。
+2. **Markdown 箇条書き・段落のステップ分割 (`step=True`)**:
+   - `format_inline_markdown` 内で、`step=True` が指定された場合、各リスト項目 `<li>` や独立段落 `<p>` に動的に `class="fragment {step_effect}"` を付与します。
+   - `step="fade-up"` のようにエフェクト名文字列をそのまま渡すことも可能です。
+3. **柔軟な Python API**:
+   - コンストラクタ / `add_*` メソッドの引数（`fragment="fade-up"`, `fragment_index=1`）と、メソッドチェーン（`s.add_card(...).as_fragment("fade-up")`）の両方をサポートしています。
+
 ---
 
 ## 4. デザインシステム仕様

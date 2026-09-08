@@ -6,8 +6,8 @@ import base64
 from pathlib import Path
 from typing import Union, List, Optional, Tuple, Sequence
 
-def format_inline_markdown(text: str) -> str:
-    """太字、イタリック、箇条書き、改行などを安全・軽量にHTMLタグへ変換する"""
+def format_inline_markdown(text: str, step: bool = False, step_effect: str = None) -> str:
+    """太字、イタリック、箇条書き、改行などを安全・軽量にHTMLタグへ変換する。step=Trueで各箇条書き・段落をフラグメント化"""
     text = text.strip()
     if not text:
         return ""
@@ -110,6 +110,15 @@ def format_inline_markdown(text: str) -> str:
     out_chunks = []
     current_list = []
 
+    # step引数が文字列（例: step="fade-up"）として渡された場合に対応
+    if isinstance(step, str) and step.lower() not in ("true", "1", "false", "0"):
+        step_effect = step
+        step = True
+
+    frag_cls = "fragment"
+    if step_effect and str(step_effect).lower() not in ("true", "1", ""):
+        frag_cls = f"fragment {str(step_effect).strip()}"
+
     def flush_list():
         if not current_list:
             return
@@ -120,9 +129,11 @@ def format_inline_markdown(text: str) -> str:
                 body_html = "<br>".join(item['body'])
                 content = f"{content}<br><span class=\"list-body\">{body_html}</span>"
             if item.get('subitems'):
-                sub_html = "<ul>" + "".join(f"<li>{s}</li>" for s in item['subitems']) + "</ul>"
+                sub_frag = f' class="{frag_cls}"' if step else ""
+                sub_html = "<ul>" + "".join(f"<li{sub_frag}>{s}</li>" for s in item['subitems']) + "</ul>"
                 content = f"{content}\n{sub_html}"
-            out_chunks.append(f"  <li>{content}</li>")
+            li_cls = f' class="{frag_cls}"' if step else ""
+            out_chunks.append(f"  <li{li_cls}>{content}</li>")
         out_chunks.append("</ul>")
         current_list.clear()
 
@@ -163,7 +174,8 @@ def format_inline_markdown(text: str) -> str:
             else:
                 # インデントがない場合 -> リストを終了し、独立した段落 <p>
                 flush_list()
-                out_chunks.append(f"<p>{stripped}</p>")
+                p_cls = f' class="{frag_cls}"' if step else ""
+                out_chunks.append(f"<p{p_cls}>{stripped}</p>")
 
     flush_list()
 
@@ -233,6 +245,50 @@ def to_graph_html(obj) -> str:
 
 class Element:
     """すべての要素の基底クラス"""
+    def __init__(self, fragment: Union[bool, str] = False, fragment_index: Optional[int] = None):
+        self.fragment = fragment
+        self.fragment_index = fragment_index
+
+    def as_fragment(self, effect: Union[bool, str] = True, index: Optional[int] = None) -> "Element":
+        """この要素を Reveal.js フラグメントアニメーション要素に指定する (メソッドチェーン可能)"""
+        self.fragment = effect
+        self.fragment_index = index
+        return self
+
+    def wrap_fragment(self, html: str) -> str:
+        """フラグメント指定がある場合、HTMLタグに fragment クラスおよび data-fragment-index 属性を付与する"""
+        if not self.fragment or not html or not html.strip():
+            return html
+
+        cls = "fragment"
+        if isinstance(self.fragment, str) and self.fragment.lower() not in ("true", "1", "fade-in", ""):
+            cls = f"fragment {self.fragment.strip()}"
+        elif self.fragment is True:
+            cls = "fragment"
+
+        idx_attr = f' data-fragment-index="{self.fragment_index}"' if self.fragment_index is not None else ""
+
+        stripped = html.strip()
+        tag_match = re.match(r'^<([a-zA-Z0-9_-]+)([^>]*)>', stripped)
+        # Markdown 以外の単一外枠要素（Card, Image, GridCell等）はルートタグに class/data-fragment-index を直接付与
+        if tag_match and not isinstance(self, Markdown):
+            tag_name = tag_match.group(1)
+            attrs = tag_match.group(2)
+
+            if re.search(r'\bclass="([^"]*)"', attrs):
+                new_attrs = re.sub(r'\bclass="([^"]*)"', rf'class="\1 {cls}"', attrs)
+            elif re.search(r"\bclass='([^']*)'", attrs):
+                new_attrs = re.sub(r"\bclass='([^']*)'", rf"class='\1 {cls}'", attrs)
+            else:
+                new_attrs = f' class="{cls}"' + attrs
+
+            if idx_attr:
+                new_attrs += idx_attr
+
+            return f'<{tag_name}{new_attrs}>' + stripped[tag_match.end():]
+        else:
+            return f'<div class="{cls}"{idx_attr}>\n{html}\n</div>'
+
     def to_html(self, embed: bool = True) -> str:
         raise NotImplementedError
 
@@ -242,15 +298,23 @@ class Element:
 
 class Container(Element):
     """子要素を持つことができる領域（コンテナ）の基底クラス"""
-    def __init__(self):
+    def __init__(self, fragment: Union[bool, str] = False, fragment_index: Optional[int] = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.elements: List[Element] = []
 
     def add(self, element: Element) -> Element:
         self.elements.append(element)
         return element
 
-    def add_markdown(self, text: str) -> "Markdown":
-        md = Markdown(text)
+    def add_markdown(
+        self,
+        text: str,
+        step: Union[bool, str] = False,
+        step_effect: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Markdown":
+        md = Markdown(text, step=step, step_effect=step_effect, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(md)
         return md
 
@@ -263,6 +327,8 @@ class Container(Element):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None,
         **kwargs
     ) -> "Card":
         card = Card(
@@ -273,6 +339,8 @@ class Container(Element):
             border_color=border_color,
             text_color=text_color,
             style=style,
+            fragment=fragment,
+            fragment_index=fragment_index,
             **kwargs
         )
         self.elements.append(card)
@@ -295,50 +363,68 @@ class Container(Element):
         col: Union[int, Sequence[int], str] = 2,
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
-        height: str = None
+        height: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
     ) -> "Grid":
-        grid = Grid(col=col, row=row, gap=gap, height=height)
+        grid = Grid(col=col, row=row, gap=gap, height=height, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(grid)
         return grid
 
-    def add_graph(self, obj) -> "Graph":
-        graph = Graph(obj)
+    def add_graph(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Graph":
+        graph = Graph(obj, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(graph)
         return graph
 
-    def add_chart(self, obj) -> "Graph":
+    def add_chart(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Graph":
         """add_graph のエイリアス"""
-        return self.add_graph(obj)
+        return self.add_graph(obj, fragment=fragment, fragment_index=fragment_index)
 
-    def add_table(self, obj) -> "Table":
+    def add_table(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Table":
         """Pandas DataFrame等を埋め込む（テーブル専用CSSが適用される）"""
-        table = Table(obj)
+        table = Table(obj, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(table)
         return table
 
-    def add_html(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%") -> "HTMLEmbed":
+    def add_html(
+        self,
+        path_or_html: str,
+        iframe: bool = False,
+        height: str = "100%",
+        width: str = "100%",
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "HTMLEmbed":
         """
         外部のHTMLファイルパス、または生HTMLタグを追加する
         iframe=False (デフォルト): <body>の中身を抽出・Plotlyの正規化を行い直接DOMとして埋め込む
         iframe=True: 独立したiframeとして読み込む（CSSのコンフリクトを避けたい場合）
         """
-        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width)
+        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(html_obj)
         return html_obj
 
-    def add_image(self, src: str = None, img_path: str = None, height: str = None, caption: str = None) -> "Image":
+    def add_image(
+        self,
+        src: str = None,
+        img_path: str = None,
+        height: str = None,
+        caption: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Image":
         actual_src = img_path if img_path is not None else src
-        img = Image(src=actual_src, height=height, caption=caption)
+        img = Image(src=actual_src, height=height, caption=caption, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(img)
         return img
 
-    def add_memo(self, text: str = "") -> "Memo":
-        memo = Memo(text)
+    def add_memo(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None) -> "Memo":
+        memo = Memo(text, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(memo)
         return memo
 
-    def add_point(self, text: str = "") -> "Point":
-        point = Point(text)
+    def add_point(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None) -> "Point":
+        point = Point(text, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(point)
         return point
 
@@ -347,6 +433,8 @@ class Container(Element):
         text: str = "",
         x: Union[int, float, str] = 0,
         y: Union[int, float, str] = 0,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None,
         **kwargs
     ) -> "StampMarkdown":
         """
@@ -355,7 +443,7 @@ class Container(Element):
         """
         if "str" in kwargs and not text:
             text = kwargs.pop("str")
-        stamp = StampMarkdown(text=text, x=x, y=y, **kwargs)
+        stamp = StampMarkdown(text=text, x=x, y=y, fragment=fragment, fragment_index=fragment_index, **kwargs)
         self.elements.append(stamp)
         return stamp
 
@@ -390,18 +478,37 @@ class Container(Element):
 
     def to_html(self, embed: bool = True) -> str:
         parts = [el.to_html(embed=embed) for el in self.elements]
-        return "\n".join(filter(None, parts))
+        html = "\n".join(filter(None, parts))
+        if type(self) is Container and self.fragment:
+            return self.wrap_fragment(html)
+        return html
 
     def has_chart(self) -> bool:
         return any(el.has_chart() for el in self.elements)
 
 
 class Markdown(Element):
-    def __init__(self, text: str):
+    def __init__(
+        self,
+        text: str,
+        step: Union[bool, str] = False,
+        step_effect: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.text = text
+        self.step = step
+        self.step_effect = step_effect
 
     def to_html(self, embed: bool = True) -> str:
-        return format_inline_markdown(self.text)
+        is_step = bool(self.step)
+        eff = self.step_effect
+        if isinstance(self.step, str) and self.step.lower() not in ("true", "1", "false", "0"):
+            is_step = True
+            eff = self.step
+        html = format_inline_markdown(self.text, step=is_step, step_effect=eff)
+        return self.wrap_fragment(html)
 
 
 class StampMarkdown(Element):
@@ -428,8 +535,11 @@ class StampMarkdown(Element):
         css_class: str = "",
         class_name: str = "",
         style: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None,
         **kwargs
     ):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.text = text
         self.x = f"{x}px" if isinstance(x, (int, float)) else str(x)
         self.y = f"{y}px" if isinstance(y, (int, float)) else str(y)
@@ -486,7 +596,8 @@ class StampMarkdown(Element):
         class_attr = " ".join(classes)
 
         inner_html = format_inline_markdown(self.text)
-        return f'<div class="{class_attr}" style="{style_str}">{inner_html}</div>'
+        stamp_html = f'<div class="{class_attr}" style="{style_str}">{inner_html}</div>'
+        return self.wrap_fragment(stamp_html)
 
     def has_chart(self) -> bool:
         return False
@@ -494,14 +605,16 @@ class StampMarkdown(Element):
 
 class Graph(Element):
     """Plotly, Matplotlib, Bokeh, Pandas 等を統一的にラップしてHTML化する要素"""
-    def __init__(self, obj):
+    def __init__(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.raw_obj = obj
         self.html_snippet = to_graph_html(obj)
 
     def to_html(self, embed: bool = True) -> str:
         if not self.html_snippet:
             return ""
-        return f'<div class="included-chart-container">\n{self.html_snippet}\n</div>'
+        graph_html = f'<div class="included-chart-container">\n{self.html_snippet}\n</div>'
+        return self.wrap_fragment(graph_html)
 
     def has_chart(self) -> bool:
         return True
@@ -512,14 +625,16 @@ Chart = Graph
 
 class Table(Element):
     """Pandas DataFrame 等を統一的にラップしてテーブルとしてHTML化する要素"""
-    def __init__(self, obj):
+    def __init__(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.raw_obj = obj
         self.html_snippet = to_graph_html(obj)
 
     def to_html(self, embed: bool = True) -> str:
         if not self.html_snippet:
             return ""
-        return f'<div class="slide-table">\n{self.html_snippet}\n</div>'
+        table_html = f'<div class="slide-table">\n{self.html_snippet}\n</div>'
+        return self.wrap_fragment(table_html)
 
     def has_chart(self) -> bool:
         return False
@@ -527,7 +642,16 @@ class Table(Element):
 
 class HTMLEmbed(Element):
     """外部HTMLファイルパスまたは生HTML文字列を埋め込む要素"""
-    def __init__(self, path_or_html: str, iframe: bool = False, height: str = "100%", width: str = "100%"):
+    def __init__(
+        self,
+        path_or_html: str,
+        iframe: bool = False,
+        height: str = "100%",
+        width: str = "100%",
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.path_or_html = path_or_html
         self.iframe = iframe
         self.height = height
@@ -543,9 +667,9 @@ class HTMLEmbed(Element):
         if self.iframe:
             # 生HTMLタグが渡された場合はiframeでは厳しいのでそのまま出力する
             if stripped.startswith("<"):
-                return stripped
+                return self.wrap_fragment(stripped)
             # style="border:none;" などで見栄えを良くする
-            return f'<iframe src="{stripped}" width="{self.width}" height="{self.height}" style="border:none; overflow:hidden;" scrolling="no"></iframe>'
+            return self.wrap_fragment(f'<iframe src="{stripped}" width="{self.width}" height="{self.height}" style="border:none; overflow:hidden;" scrolling="no"></iframe>')
             
         # iframe=False (embed) モードの場合
         # ファイルパスの判定
@@ -555,12 +679,13 @@ class HTMLEmbed(Element):
                     content = f.read()
 
                 from .utils import normalize_embedded_html
-                return normalize_embedded_html(content, width=self.width, height=self.height)
+                res = normalize_embedded_html(content, width=self.width, height=self.height)
+                return self.wrap_fragment(res)
             except Exception as e:
                 return f"<div>Error loading HTML file: {stripped} ({e})</div>"
                 
         # ファイルパスでない場合は生HTMLとして扱う
-        return stripped
+        return self.wrap_fragment(stripped)
         
     def has_chart(self) -> bool:
         # iframeやembedの中にPlotlyが含まれている可能性があるため一応Trueにしておく
@@ -569,7 +694,16 @@ class HTMLEmbed(Element):
 
 class Image(Element):
     """画像要素（ローカルファイルやPILイメージを自動でBase64エンコードして完全自己完結化）"""
-    def __init__(self, src=None, img_path=None, height: str = None, caption: str = None):
+    def __init__(
+        self,
+        src=None,
+        img_path=None,
+        height: str = None,
+        caption: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.src = img_path if img_path is not None else src
         self.height = height
         self.caption = caption
@@ -625,7 +759,8 @@ class Image(Element):
 
         style_attr = f' style="{" ".join(style_parts)}"'
         caption_html = f'<figcaption>{self.caption}</figcaption>' if self.caption else ""
-        return f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
+        img_html = f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
+        return self.wrap_fragment(img_html)
 
 
 def _is_dark_color(c: str) -> bool:
@@ -740,9 +875,11 @@ class Card(Container):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None,
         **kwargs
     ):
-        super().__init__()
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.color = color.lower() if color else None
         self.bg = bg
         self.height = height
@@ -794,12 +931,13 @@ class Card(Container):
 
         style_attr = f' style="{" ".join(styles)}"' if styles else ""
         inner_html = super().to_html(embed=embed)
-        return f'<div class="{" ".join(cls_parts)}"{style_attr}>\n{inner_html}\n</div>'
+        card_html = f'<div class="{" ".join(cls_parts)}"{style_attr}>\n{inner_html}\n</div>'
+        return self.wrap_fragment(card_html)
 
 
 class Memo(Container):
-    def __init__(self, text: str = ""):
-        super().__init__()
+    def __init__(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -809,13 +947,14 @@ class Memo(Container):
         inner = super().to_html(embed=embed)
         if inner:
             parts.append(inner)
-        return f'<div class="layout-memo">\n' + "\n".join(parts) + '\n</div>'
+        memo_html = f'<div class="layout-memo">\n' + "\n".join(parts) + '\n</div>'
+        return self.wrap_fragment(memo_html)
 
 
 class Point(Container):
     """ポイント強調ボックス (.point-box) 要素。内部に Grid や Image などを自由にネスト可能"""
-    def __init__(self, text: str = ""):
-        super().__init__()
+    def __init__(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -825,17 +964,19 @@ class Point(Container):
         inner = super().to_html(embed=embed)
         if inner:
             parts.append(inner)
-        return f'<div class="point-box">\n' + "\n".join(parts) + '\n</div>'
+        point_html = f'<div class="point-box">\n' + "\n".join(parts) + '\n</div>'
+        return self.wrap_fragment(point_html)
 
 
 class GridCell(Container):
-    def __init__(self, name: str = ""):
-        super().__init__()
+    def __init__(self, name: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.name = name
 
     def to_html(self, embed: bool = True) -> str:
         inner_html = super().to_html(embed=embed)
-        return f'<div class="grid-cell">\n{inner_html}\n</div>'
+        cell_html = f'<div class="grid-cell">\n{inner_html}\n</div>'
+        return self.wrap_fragment(cell_html)
 
 
 class Grid(Element):
@@ -844,8 +985,11 @@ class Grid(Element):
         col: Union[int, Sequence[int], str] = 2,
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
-        height: str = None
+        height: str = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
     ):
+        super().__init__(fragment=fragment, fragment_index=fragment_index)
         self.col = col
         self.row = row
         self.gap = gap
@@ -943,7 +1087,8 @@ class Grid(Element):
 
         grid_style = f'style="{"; ".join(style_parts)};"'
         cells_html = "\n".join([cell.to_html(embed=embed) for cell in self.cells])
-        return f'<div class="custom-grid" {grid_style}>\n{cells_html}\n</div>'
+        grid_html = f'<div class="custom-grid" {grid_style}>\n{cells_html}\n</div>'
+        return self.wrap_fragment(grid_html)
 
     def has_chart(self) -> bool:
         return any(cell.has_chart() for cell in self.cells)

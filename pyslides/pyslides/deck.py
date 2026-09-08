@@ -66,7 +66,7 @@ class Deck:
             self._slides.append(s)
         return self
         
-    def to_html(self, output_path: str, embed: bool = True):
+    def to_html(self, output_path: Optional[str] = None, embed: bool = True) -> str:
         from .renderer import render_slide_html
         from .builder import build_full_html
         
@@ -100,9 +100,11 @@ class Deck:
             custom_style_paths=style_paths
         )
         
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(final_html)
-        print(f"Presentation saved to {output_path}")
+        if output_path:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(final_html)
+            print(f"Presentation saved to {output_path}")
+        return final_html
 
     def show(self, height=540):
         """Preview the entire presentation deck with all slides and animations in Jupyter Notebook (1920x1080, 16:9 Full HD)"""
