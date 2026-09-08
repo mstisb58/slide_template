@@ -82,7 +82,9 @@ Reveal.addKeyBinding({ keyCode: 70, key: 'F', description: 'Toggle Fullscreen' }
     btnO.title = 'タイル一覧 (O / ESC)';
     btnO.textContent = 'O';
     btnO.onclick = function() {
-      if (typeof Reveal !== 'undefined' && Reveal.toggleOverview) {
+      if (typeof toggleSlideSorter === 'function') {
+        toggleSlideSorter();
+      } else if (typeof Reveal !== 'undefined' && Reveal.toggleOverview) {
         Reveal.toggleOverview();
       }
     };
@@ -323,3 +325,421 @@ Reveal.on('fragmentshown', function(event) {
 Reveal.on('fragmenthidden', function(event) {
   updateAgendaSteps(Reveal.getCurrentSlide());
 });
+
+// ==========================================================================
+// PowerPoint スタイル・スライド一覧（タイル・ソーター）モード
+// ==========================================================================
+(function() {
+  let sorterModal = null;
+  let isSorterOpen = false;
+  let selectedCardIndex = 0;
+
+  function isInputFocused(e) {
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (e.target && e.target.isContentEditable);
+  }
+
+  function getSlideTitle(sec, index) {
+    if (!sec) return 'スライド ' + (index + 1);
+    const h1 = sec.querySelector('h1');
+    if (h1 && h1.textContent.trim()) return h1.textContent.trim();
+    const h2 = sec.querySelector('h2');
+    if (h2 && h2.textContent.trim()) return h2.textContent.trim();
+    const h3 = sec.querySelector('h3');
+    if (h3 && h3.textContent.trim()) return h3.textContent.trim();
+    const titleTopic = sec.querySelector('.title-topic');
+    if (titleTopic && titleTopic.textContent.trim()) return titleTopic.textContent.trim();
+    const agendaTitle = sec.querySelector('.agenda-title');
+    if (agendaTitle && agendaTitle.textContent.trim()) return agendaTitle.textContent.trim();
+    return 'スライド ' + (index + 1);
+  }
+
+  function getFlatSlideList() {
+    // Reveal.jsの全実体スライド（stackコンテナを除外した個別section）
+    return Array.from(document.querySelectorAll('.reveal .slides section:not(.stack)'));
+  }
+
+  function getSlideCoordinates(sec) {
+    if (typeof Reveal !== 'undefined' && Reveal.getIndices) {
+      const idx = Reveal.getIndices(sec);
+      if (idx && typeof idx.h === 'number') {
+        return { h: idx.h, v: idx.v || 0 };
+      }
+    }
+    // Fallback: DOM構造から h, v を算出
+    if (sec.parentElement && sec.parentElement.tagName === 'SECTION') {
+      const parentStack = sec.parentElement;
+      const h = Array.from(parentStack.parentElement.children).indexOf(parentStack);
+      const v = Array.from(parentStack.children).indexOf(sec);
+      return { h: Math.max(0, h), v: Math.max(0, v) };
+    }
+    const h = Array.from(sec.parentElement.children).indexOf(sec);
+    return { h: Math.max(0, h), v: 0 };
+  }
+
+  function createSorterModal() {
+    if (sorterModal) return sorterModal;
+
+    sorterModal = document.createElement('div');
+    sorterModal.id = 'slide-sorter-modal';
+    sorterModal.className = 'slide-sorter-modal';
+    sorterModal.style.display = 'none';
+
+    sorterModal.innerHTML = `
+      <div class="slide-sorter-header">
+        <div class="slide-sorter-header-left">
+          <span class="slide-sorter-icon">🗂️</span>
+          <h3 class="slide-sorter-heading">スライド一覧 (Slide Sorter)</h3>
+          <span class="slide-sorter-badge-total" id="sorter-total-count">0 枚</span>
+        </div>
+        <div class="slide-sorter-header-right">
+          <span class="slide-sorter-keyboard-hint">↑ ↓ ← → で選択 / Enter またはクリックで移動 / Esc・O で閉じる</span>
+          <button class="slide-sorter-btn-close" id="sorter-btn-close" title="閉じる (Esc)">✕</button>
+        </div>
+      </div>
+      <div class="slide-sorter-body" id="sorter-body">
+        <div class="slide-sorter-grid" id="sorter-grid"></div>
+      </div>
+    `;
+
+    document.body.appendChild(sorterModal);
+
+    // 閉じるボタン
+    const btnClose = sorterModal.querySelector('#sorter-btn-close');
+    if (btnClose) {
+      btnClose.addEventListener('click', function(e) {
+        e.stopPropagation();
+        closeSlideSorter();
+      });
+    }
+
+    // モーダル背景クリック時（グリッドやカード以外）に閉じる
+    sorterModal.addEventListener('click', function(e) {
+      if (e.target === sorterModal || e.target.id === 'sorter-body') {
+        closeSlideSorter();
+      }
+    });
+
+    window.addEventListener('resize', function() {
+      if (isSorterOpen) {
+        updateCardScales();
+      }
+    });
+
+    return sorterModal;
+  }
+
+  function updateCardScales() {
+    if (!sorterModal) return;
+    const cards = sorterModal.querySelectorAll('.slide-sorter-card');
+    cards.forEach(card => {
+      const preview = card.querySelector('.slide-sorter-card-preview');
+      const canvas = card.querySelector('.slide-sorter-canvas');
+      if (preview && canvas) {
+        const previewWidth = preview.clientWidth;
+        if (previewWidth > 0) {
+          const scale = previewWidth / 1920;
+          canvas.style.transform = `scale(${scale})`;
+        }
+      }
+    });
+  }
+
+  function buildGrid() {
+    createSorterModal();
+    const grid = sorterModal.querySelector('#sorter-grid');
+    const totalBadge = sorterModal.querySelector('#sorter-total-count');
+    grid.innerHTML = '';
+
+    const slides = getFlatSlideList();
+    if (totalBadge) {
+      totalBadge.textContent = slides.length + ' 枚';
+    }
+
+    const currentSlide = (typeof Reveal !== 'undefined' && Reveal.getCurrentSlide) ? Reveal.getCurrentSlide() : null;
+    let currentIdx = -1;
+
+    slides.forEach((sec, idx) => {
+      const coords = getSlideCoordinates(sec);
+      const isCurrent = (sec === currentSlide);
+      if (isCurrent) currentIdx = idx;
+
+      const title = getSlideTitle(sec, idx);
+
+      const card = document.createElement('div');
+      card.className = 'slide-sorter-card' + (isCurrent ? ' is-current-slide' : '');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('data-index', idx);
+      card.setAttribute('data-h', coords.h);
+      card.setAttribute('data-v', coords.v);
+
+      const preview = document.createElement('div');
+      preview.className = 'slide-sorter-card-preview';
+
+      // 16:9キャンバスラッパー (スライド紙面を100%遮らず表示)
+      const wrapper = document.createElement('div');
+      wrapper.className = 'slide-sorter-canvas-wrapper';
+
+      const canvas = document.createElement('div');
+      canvas.className = 'slide-sorter-canvas reveal';
+
+      const slidesWrap = document.createElement('div');
+      slidesWrap.className = 'slides';
+
+      // タイトルスライド以外は固定ロゴを表示
+      const isTitle = sec.classList.contains('title-section') || !!sec.querySelector('.title-slide');
+      if (!isTitle) {
+        const logo = document.createElement('div');
+        logo.className = 'slide-fixed-logo';
+        slidesWrap.appendChild(logo);
+      }
+
+      // スライド本体のディープクローン
+      const clone = sec.cloneNode(true);
+      clone.classList.remove('future', 'past', 'stack');
+      clone.classList.add('present');
+      clone.style.display = '';
+      clone.style.transform = 'none';
+
+      // タイル一覧内では全フラグメントを表示状態にする（全体を俯瞰できるように）
+      clone.querySelectorAll('.fragment').forEach(f => {
+        f.classList.add('visible');
+        f.classList.remove('current-fragment');
+        f.style.opacity = '1';
+        f.style.visibility = 'visible';
+        f.style.transform = 'none';
+      });
+
+      // アジェンダアイテムも全表示
+      clone.querySelectorAll('.agenda-item').forEach(item => {
+        item.classList.add('is-active');
+        item.classList.remove('dimmed');
+      });
+
+      slidesWrap.appendChild(clone);
+      canvas.appendChild(slidesWrap);
+      wrapper.appendChild(canvas);
+      preview.appendChild(wrapper);
+      card.appendChild(preview);
+
+      // フッター（スライド番号・タイトル・現在タグ）
+      const footer = document.createElement('div');
+      footer.className = 'slide-sorter-card-footer';
+
+      const numSpan = document.createElement('span');
+      numSpan.className = 'slide-sorter-card-number';
+      numSpan.textContent = (idx + 1);
+      footer.appendChild(numSpan);
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'slide-sorter-card-title';
+      titleSpan.textContent = title;
+      titleSpan.title = title;
+      footer.appendChild(titleSpan);
+
+      if (isCurrent) {
+        const curBadge = document.createElement('span');
+        curBadge.className = 'slide-sorter-card-current-badge';
+        curBadge.textContent = '現在';
+        footer.appendChild(curBadge);
+      }
+
+      card.appendChild(footer);
+
+      // クリックイベントで該当スライドへ遷移
+      card.addEventListener('click', function() {
+        navigateToSlide(coords.h, coords.v);
+      });
+
+      card.addEventListener('focus', function() {
+        setSelectedCard(idx, false);
+      });
+
+      grid.appendChild(card);
+    });
+
+    selectedCardIndex = currentIdx >= 0 ? currentIdx : 0;
+  }
+
+  function setSelectedCard(idx, shouldFocus = true) {
+    if (!sorterModal) return;
+    const cards = sorterModal.querySelectorAll('.slide-sorter-card');
+    if (idx < 0 || idx >= cards.length) return;
+
+    cards.forEach((c, i) => {
+      c.classList.toggle('is-selected', i === idx);
+    });
+
+    selectedCardIndex = idx;
+    if (shouldFocus && cards[idx]) {
+      cards[idx].focus();
+      cards[idx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  function navigateToSlide(h, v) {
+    closeSlideSorter();
+    if (typeof Reveal !== 'undefined' && Reveal.slide) {
+      Reveal.slide(h, v, 0);
+    }
+  }
+
+  function openSlideSorter() {
+    if (isSorterOpen) return;
+    buildGrid();
+    sorterModal.style.display = 'flex';
+    isSorterOpen = true;
+
+    // コントロールボタンのアクティブ化
+    const btnO = document.getElementById('btn-overview');
+    if (btnO) btnO.classList.add('is-active');
+
+    // スケール計算 & 現在のスライドカードへスクロール
+    requestAnimationFrame(() => {
+      updateCardScales();
+      const cards = sorterModal.querySelectorAll('.slide-sorter-card');
+      if (cards[selectedCardIndex]) {
+        setSelectedCard(selectedCardIndex, true);
+        cards[selectedCardIndex].scrollIntoView({ behavior: 'auto', block: 'center' });
+      }
+    });
+
+    // Revealのカスタムイベント発火
+    if (typeof Reveal !== 'undefined' && Reveal.dispatchEvent) {
+      try {
+        Reveal.dispatchEvent({ type: 'overviewshown' });
+      } catch(e) {}
+    }
+  }
+
+  function closeSlideSorter() {
+    if (!isSorterOpen || !sorterModal) return;
+    sorterModal.style.display = 'none';
+    isSorterOpen = false;
+
+    // コントロールボタンの解除
+    const btnO = document.getElementById('btn-overview');
+    if (btnO) btnO.classList.remove('is-active');
+
+    // Revealにフォーカス復帰
+    if (typeof Reveal !== 'undefined' && Reveal.focus) {
+      Reveal.focus();
+    }
+
+    if (typeof Reveal !== 'undefined' && Reveal.dispatchEvent) {
+      try {
+        Reveal.dispatchEvent({ type: 'overviewhidden' });
+      } catch(e) {}
+    }
+  }
+
+  function toggleSlideSorter() {
+    if (isSorterOpen) {
+      closeSlideSorter();
+    } else {
+      openSlideSorter();
+    }
+  }
+
+  function handleSorterKeyboard(e) {
+    if (!isSorterOpen || !sorterModal) return;
+
+    if (e.key === 'Escape' || e.key === 'o' || e.key === 'O') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSlideSorter();
+      return;
+    }
+
+    const cards = Array.from(sorterModal.querySelectorAll('.slide-sorter-card'));
+    if (cards.length === 0) return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      const currentCard = cards[selectedCardIndex];
+      if (currentCard) {
+        const h = parseInt(currentCard.getAttribute('data-h') || '0', 10);
+        const v = parseInt(currentCard.getAttribute('data-v') || '0', 10);
+        navigateToSlide(h, v);
+      }
+      return;
+    }
+
+    // 列数の計算（1行目のカード数）
+    let cols = 1;
+    if (cards.length > 1) {
+      const firstTop = cards[0].offsetTop;
+      for (let i = 1; i < cards.length; i++) {
+        if (cards[i].offsetTop === firstTop) {
+          cols++;
+        } else {
+          break;
+        }
+      }
+    }
+
+    let targetIdx = selectedCardIndex;
+
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      targetIdx = Math.min(cards.length - 1, selectedCardIndex + 1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      e.stopPropagation();
+      targetIdx = Math.max(0, selectedCardIndex - 1);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      targetIdx = Math.min(cards.length - 1, selectedCardIndex + cols);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      targetIdx = Math.max(0, selectedCardIndex - cols);
+    }
+
+    if (targetIdx !== selectedCardIndex) {
+      setSelectedCard(targetIdx, true);
+    }
+  }
+
+  // グローバルキーリスナー（キャプチャフェーズで 'O', 'ESC', 矢印キーを確実にキャッチ）
+  window.addEventListener('keydown', function(e) {
+    if (isSorterOpen) {
+      handleSorterKeyboard(e);
+      return;
+    }
+
+    // ソーターが閉じていて入力フィールドにいないとき
+    if ((e.key === 'o' || e.key === 'O') && !isInputFocused(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      openSlideSorter();
+    }
+  }, true);
+
+  // Reveal.jsの標準 overview メソッドの差し替え
+  function hookRevealOverview() {
+    if (typeof Reveal === 'undefined') return;
+
+    if (Reveal.overview) {
+      Reveal.overview.toggle = function() { toggleSlideSorter(); };
+      Reveal.overview.activate = function() { openSlideSorter(); };
+      Reveal.overview.deactivate = function() { closeSlideSorter(); };
+      Reveal.overview.isActive = function() { return isSorterOpen; };
+    }
+    Reveal.toggleOverview = function() { toggleSlideSorter(); };
+  }
+
+  if (typeof Reveal !== 'undefined' && Reveal.on) {
+    Reveal.on('ready', hookRevealOverview);
+  } else {
+    document.addEventListener('DOMContentLoaded', hookRevealOverview);
+  }
+
+  // グローバル露出
+  window.toggleSlideSorter = toggleSlideSorter;
+  window.openSlideSorter = openSlideSorter;
+  window.closeSlideSorter = closeSlideSorter;
+})();
