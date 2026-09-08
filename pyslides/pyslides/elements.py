@@ -884,6 +884,7 @@ class HTML(Element):
         self.iframe = iframe
         self.height = height
         self.width = width
+        self._has_chart = None
 
     def to_html(self, embed: bool = True) -> str:
         content = self.path_or_str.strip()
@@ -893,6 +894,10 @@ class HTML(Element):
                     content = f.read()
             except Exception:
                 pass
+
+        c_lower = content.lower()
+        if "plotly" in c_lower or "chart" in c_lower or "plotly-graph-div" in content or "js-plotly-plot" in content:
+            self._has_chart = True
 
         if self.iframe:
             from .utils import normalize_embedded_html
@@ -904,7 +909,24 @@ class HTML(Element):
         return normalize_embedded_html(content, width=self.width, height=self.height)
 
     def has_chart(self) -> bool:
-        return "plotly" in self.path_or_str.lower() or "chart" in self.path_or_str.lower()
+        if self._has_chart is not None:
+            return self._has_chart
+        p_str = self.path_or_str.strip()
+        if "plotly" in p_str.lower() or "chart" in p_str.lower():
+            self._has_chart = True
+            return True
+        if p_str.endswith((".html", ".htm")) or os.path.exists(p_str):
+            try:
+                with open(p_str, "r", encoding="utf-8") as f:
+                    sample = f.read(5000)
+                    sample_lower = sample.lower()
+                    if "plotly" in sample_lower or "chart" in sample_lower or "plotly-graph-div" in sample:
+                        self._has_chart = True
+                        return True
+            except Exception:
+                pass
+        self._has_chart = False
+        return False
 
 
 class Image(Element):

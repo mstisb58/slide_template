@@ -198,6 +198,8 @@ class Slide(Container):
             custom_style_paths=[custom_style] if custom_style else []
         )
 
-        b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
-        data_url = f"data:text/html;base64,{b64_html}"
-        display(IFrame(src=data_url, width="100%", height=height))
+        temp_file = "preview_temp.html"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(preview_html)
+            
+        display(IFrame(src=f"./{temp_file}", width="100%", height=height))

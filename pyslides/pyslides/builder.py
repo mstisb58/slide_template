@@ -121,10 +121,10 @@ def build_full_html(
         
         if not has_chart:
             plotly_html = ""
-        elif single_slide:
-            plotly_html = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
-        else:
+        elif assets.get("plotly_js"):
             plotly_html = f"<script>\n{assets['plotly_js']}\n</script>"
+        else:
+            plotly_html = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
 
         if single_slide:
             katex_html = """  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
