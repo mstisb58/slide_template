@@ -67,7 +67,7 @@ class Slide(Container):
         raise AttributeError(f"'Slide' object has no attribute '{name}'")
 
     def __setattr__(self, name, value):
-        if name in ("template", "factory", "deck", "attributes", "elements", "sections"):
+        if name in ("template", "factory", "deck", "attributes", "elements", "sections", "parent", "_step", "_step_counter", "_current_step", "_current_animation"):
             super().__setattr__(name, value)
         else:
             attrs = self.__dict__.get("attributes")
@@ -168,8 +168,16 @@ class Slide(Container):
     hilight = HighlightProperty()
 
     # エイリアス: s.grid(...) -> s.add_grid(...)
-    def grid(self, col: Union[int, str] = 2, row: Union[int, str] = 1, gap: str = "16px", height: str = None) -> Grid:
-        return self.add_grid(col=col, row=row, gap=gap, height=height)
+    def grid(
+        self,
+        col: Union[int, str] = 2,
+        row: Union[int, str] = 1,
+        gap: str = "16px",
+        height: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> Grid:
+        return self.add_grid(col=col, row=row, gap=gap, height=height, step=step, animation=animation)
 
     def show(self, height=540):
         """Preview this slide in Jupyter Notebook with 1920x1080 (16:9 Full HD) Design System"""

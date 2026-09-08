@@ -66,14 +66,14 @@ class Deck:
             self._slides.append(s)
         return self
         
-    def to_html(self, output_path: Optional[str] = None, embed: bool = True) -> str:
+    def to_html(self, output_path: Optional[str] = None, embed: bool = True, font_embed: bool = True) -> str:
         from .renderer import render_slide_html
         from .builder import build_full_html
         
         sections = []
         any_charts = False
         for i, slide in enumerate(self._slides):
-            sec_html, is_title, has_chart = render_slide_html(slide)
+            sec_html, is_title, has_chart = render_slide_html(slide, embed=embed)
             if has_chart:
                 any_charts = True
             if i == 0 and is_title:
@@ -90,6 +90,26 @@ class Deck:
             if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
                 if slide.factory.style not in style_paths:
                     style_paths.append(slide.factory.style)
+
+        subset_font_css = ""
+        if font_embed:
+            from .font_subsetter import find_font_for_css, generate_subset
+            font_file, font_number, font_name = find_font_for_css(style_paths)
+            if not font_file:
+                raise RuntimeError(
+                    "font_embed=True: CSSの --font-main に指定されたフォントがこのPCに見つかりません。"
+                    "フォントをインストールするか、font_embed=False で出力してください。"
+                )
+            print(f"Font subsetting: '{font_name}' (from {font_file}, index={font_number})")
+            b64_font = generate_subset(font_file, font_number, slides_str, output_path=None)
+            if b64_font:
+                subset_font_css = f"""<style>
+@font-face {{
+    font-family: '{font_name}';
+    src: url('{b64_font}') format('woff2');
+    font-display: swap;
+}}
+</style>"""
         
         final_html = build_full_html(
             slides_section_html=slides_str,
@@ -97,7 +117,9 @@ class Deck:
             single_slide=False,
             is_title_slide=(len(self._slides) > 0 and self._slides[0].template == "title"),
             has_chart=any_charts,
-            custom_style_paths=style_paths
+            custom_style_paths=style_paths,
+            export_mode="inline",
+            subset_font_css=subset_font_css
         )
         
         if output_path:
@@ -142,6 +164,93 @@ class Deck:
             custom_style_paths=style_paths
         )
 
-        b64_html = base64.b64encode(preview_html.encode('utf-8')).decode('utf-8')
-        data_url = f"data:text/html;base64,{b64_html}"
-        display(IFrame(src=data_url, width="100%", height=height))
+        import os
+        from IPython.display import display, IFrame
+        
+        # URL長制限やIPythonのセキュリティ制限（srcdocブロック）を回避するため、
+        # カレントディレクトリに一時的なHTMLファイルを作成して IFrame で読み込む
+        temp_file = "preview_temp.html"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            f.write(preview_html)
+            
+        display(IFrame(src=f"./{temp_file}", width="100%", height=height))
+
+    def to_zip(self, zip_path: str, font_embed: bool = True):
+        """
+        プレゼンテーション一式を ZIP ファイルとしてエクスポートします。
+        HTML 単体ではなく、画像や CSS/JS などの依存ファイルが 'assets/' や 'media/' ディレクトリとして構造化された状態で ZIP に含まれます。
+        font_embed=True を指定すると、フォントのサブセット化を実行し同梱します。
+        """
+        import tempfile
+        import shutil
+        from pathlib import Path
+        from .elements import EXPORT_CONTEXT
+        from .renderer import render_slide_html
+        from .builder import build_full_html
+        
+        if not zip_path.endswith('.zip'):
+            zip_path += '.zip'
+            
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            
+            EXPORT_CONTEXT["export_dir"] = str(tmp_path)
+            EXPORT_CONTEXT["media_counter"] = 0
+            
+            sections = []
+            any_charts = False
+            for i, slide in enumerate(self._slides):
+                sec_html, is_title, has_chart = render_slide_html(slide, embed=False)
+                if has_chart:
+                    any_charts = True
+                sections.append(sec_html)
+                
+            slides_str = "\n".join(sections)
+            
+            style_paths = []
+            for slide in self._slides:
+                if hasattr(slide, 'factory') and slide.factory and slide.factory.style:
+                    if slide.factory.style not in style_paths:
+                        style_paths.append(slide.factory.style)
+                        
+            subset_font_css = ""
+            if font_embed:
+                from .font_subsetter import find_font_for_css, generate_subset
+                font_file, font_number, font_name = find_font_for_css(style_paths)
+                if not font_file:
+                    raise RuntimeError(
+                        "font_embed=True: CSSの --font-main に指定されたフォントがこのPCに見つかりません。"
+                        "フォントをインストールするか、font_embed=False で出力してください。"
+                    )
+                print(f"Font subsetting: '{font_name}' (from {font_file}, index={font_number})")
+                font_out_path = str(tmp_path / "assets" / "fonts" / "subset.woff2")
+                generate_subset(font_file, font_number, slides_str, output_path=font_out_path)
+                subset_font_css = f"""<style>
+@font-face {{
+    font-family: '{font_name}';
+    src: url('assets/fonts/subset.woff2') format('woff2');
+    font-display: swap;
+}}
+</style>"""
+
+            final_html = build_full_html(
+                slides_section_html=slides_str,
+                title=self.title or "Presentation",
+                single_slide=False,
+                is_title_slide=(len(self._slides) > 0 and self._slides[0].template == "title"),
+                has_chart=any_charts,
+                custom_style_paths=style_paths,
+                export_mode="zip",
+                export_dir=tmp_path,
+                subset_font_css=subset_font_css
+            )
+            
+            with open(tmp_path / "index.html", "w", encoding="utf-8") as f:
+                f.write(final_html)
+                
+            zip_base_name = str(Path(zip_path).with_suffix(''))
+            shutil.make_archive(zip_base_name, 'zip', tmpdir)
+            
+            EXPORT_CONTEXT["export_dir"] = None
+            
+        print(f"Presentation successfully exported to {zip_path}")

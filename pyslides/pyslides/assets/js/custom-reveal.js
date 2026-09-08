@@ -4,6 +4,7 @@ Reveal.initialize({
   slideNumber: 'c/t',
   showSlideNumber: 'all',
   transition: 'slide',
+  navigationMode: 'linear',
   center: false,
   width: 1920,
   height: 1080,
@@ -320,6 +321,19 @@ Reveal.on('slidechanged', function(event) {
 
 Reveal.on('fragmentshown', function(event) {
   updateAgendaSteps(Reveal.getCurrentSlide());
+  var target = event.fragment || Reveal.getCurrentSlide();
+  setTimeout(function() {
+    initPlotlyOnSlide(target);
+  }, 20);
+  setTimeout(function() {
+    initPlotlyOnSlide(target);
+    if (typeof Plotly !== 'undefined') {
+      target.querySelectorAll('.plotly-graph-div, .js-plotly-plot, [id^="chart-"]').forEach(function(el) {
+        resizePlotlyElement(el);
+        try { Plotly.relayout(el, {autosize: true}); } catch(e) {}
+      });
+    }
+  }, 120);
 });
 
 Reveal.on('fragmenthidden', function(event) {

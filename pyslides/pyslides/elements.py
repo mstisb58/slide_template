@@ -3,11 +3,14 @@ import io
 import re
 import uuid
 import base64
+import contextlib
 from pathlib import Path
 from typing import Union, List, Optional, Tuple, Sequence
 
-def format_inline_markdown(text: str, step: bool = False, step_effect: str = None) -> str:
-    """太字、イタリック、箇条書き、改行などを安全・軽量にHTMLタグへ変換する。step=Trueで各箇条書き・段落をフラグメント化"""
+EXPORT_CONTEXT = {"export_dir": None, "media_counter": 0}
+
+def format_inline_markdown(text: str, step: bool = False, step_effect: str = "fade-in") -> str:
+    """太字、イタリック、箇条書き、改行などを安全・軽量にHTMLタグへ変換する"""
     text = text.strip()
     if not text:
         return ""
@@ -52,7 +55,7 @@ def format_inline_markdown(text: str, step: bool = False, step_effect: str = Non
                 sep_cells = [c.strip() for c in next_stripped.split("|")]
                 sep_cells = [c for c in sep_cells if c]
                 is_sep = len(sep_cells) > 0 and all(re.match(r"^:?-+:?$", c) for c in sep_cells)
-                
+
                 if is_sep:
                     alignments = []
                     for sc in sep_cells:
@@ -87,14 +90,14 @@ def format_inline_markdown(text: str, step: bool = False, step_effect: str = Non
                             row_raw = row_raw[1:]
                         if row_line.endswith("|"):
                             row_raw = row_raw[:-1]
-                        
+
                         table_html.append('    <tr>')
                         for idx, rc in enumerate(row_raw):
                             align = alignments[idx] if idx < len(alignments) else ''
                             table_html.append(f'      <td{align}>{rc}</td>')
                         table_html.append('    </tr>')
                         i += 1
-                    
+
                     table_html.extend(['  </tbody>', '</table>'])
                     new_lines.append("\n".join(table_html))
                     continue
@@ -110,14 +113,7 @@ def format_inline_markdown(text: str, step: bool = False, step_effect: str = Non
     out_chunks = []
     current_list = []
 
-    # step引数が文字列（例: step="fade-up"）として渡された場合に対応
-    if isinstance(step, str) and step.lower() not in ("true", "1", "false", "0"):
-        step_effect = step
-        step = True
-
-    frag_cls = "fragment"
-    if step_effect and str(step_effect).lower() not in ("true", "1", ""):
-        frag_cls = f"fragment {str(step_effect).strip()}"
+    frag_cls = "fragment" if step_effect in ("fade-in", "") else f"fragment {step_effect}"
 
     def flush_list():
         if not current_list:
@@ -129,8 +125,7 @@ def format_inline_markdown(text: str, step: bool = False, step_effect: str = Non
                 body_html = "<br>".join(item['body'])
                 content = f"{content}<br><span class=\"list-body\">{body_html}</span>"
             if item.get('subitems'):
-                sub_frag = f' class="{frag_cls}"' if step else ""
-                sub_html = "<ul>" + "".join(f"<li{sub_frag}>{s}</li>" for s in item['subitems']) + "</ul>"
+                sub_html = "<ul>" + "".join(f"<li>{s}</li>" for s in item['subitems']) + "</ul>"
                 content = f"{content}\n{sub_html}"
             li_cls = f' class="{frag_cls}"' if step else ""
             out_chunks.append(f"  <li{li_cls}>{content}</li>")
@@ -144,53 +139,40 @@ def format_inline_markdown(text: str, step: bool = False, step_effect: str = Non
         if not stripped:
             continue
 
-        # すでにブロックHTMLの場合はそのまま出力
         if any(stripped.startswith(prefix) for prefix in block_html_prefixes):
             flush_list()
             out_chunks.append(stripped)
             continue
 
-        # インデント文字数の計算（タブはスペース4つ換算）
         expanded_line = line.expandtabs(4)
         indent = len(expanded_line) - len(expanded_line.lstrip(' '))
 
-        # 箇条書き (- item または * item)
         match_bullet = re.match(r'^(\s*)[-*]\s+(.*)$', line)
         if match_bullet:
             bullet_indent = len(match_bullet.group(1).expandtabs(4))
             bullet_text = match_bullet.group(2).strip()
 
             if bullet_indent >= 2 and current_list:
-                # ネストされたサブ箇条書き
                 current_list[-1].setdefault('subitems', []).append(bullet_text)
             else:
-                # 第一レベルの箇条書き
                 current_list.append({'header': bullet_text, 'body': [], 'subitems': []})
         else:
-            # 箇条書き記号がない行
             if current_list and indent >= 2:
-                # インデントされている場合 -> 直前の箇条書き項目の内部要素（本文）
                 current_list[-1]['body'].append(stripped)
             else:
-                # インデントがない場合 -> リストを終了し、独立した段落 <p>
                 flush_list()
                 p_cls = f' class="{frag_cls}"' if step else ""
                 out_chunks.append(f"<p{p_cls}>{stripped}</p>")
 
     flush_list()
-
     return "\n".join(out_chunks)
 
 
 def to_graph_html(obj) -> str:
-    """
-    あらゆる可視化オブジェクト（Plotly, Matplotlib, Bokeh, Altair, Pandas, HTMLファイルパス等）を
-    Reveal.js用HTMLスニペットに統一変換する
-    """
+    """あらゆる可視化オブジェクトを Reveal.js 用 HTML スニペットに統一変換する"""
     if obj is None:
         return ""
 
-    # すでに HTML 文字列または Graph オブジェクトの場合
     if hasattr(obj, "to_html") and not isinstance(obj, str) and hasattr(obj, "html_snippet"):
         return obj.html_snippet
 
@@ -240,54 +222,135 @@ def to_graph_html(obj) -> str:
         except Exception:
             pass
 
-    return f"<div class='graph-object'>{str(obj)}</div>"
+    # 5. 文字列パス（外部HTMLファイル等の場合）
+    if isinstance(obj, str):
+        from .utils import normalize_embedded_html
+        content = obj.strip()
+        if content.endswith(".html") or content.endswith(".htm") or os.path.exists(content):
+            try:
+                with open(content, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                pass
+        return normalize_embedded_html(content)
+
+    return f"<div>{html_escape(str(obj))}</div>"
+
+
+def html_escape(text: str) -> str:
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+FRAGMENT_ANIMATION_ALIASES = {
+    "semi-out": "semi-fade-out",
+    "highlight": "highlight-red",
+}
+
+def wrap_with_fragment(html: str, step: Optional[Union[int, str]] = None, animation: Optional[str] = "fade-in") -> str:
+    """要素のHTMLをreveal.jsのfragment divでラップする"""
+    if step is None or not html:
+        return html
+    anim = (animation or "fade-in").strip()
+    anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+    cls = "fragment" if anim in ("fade-in", "") else f"fragment {anim}"
+    idx_attr = f' data-fragment-index="{step}"' if str(step) not in ("", "+", "None") else ""
+    return f'<div class="{cls}"{idx_attr}>\n{html}\n</div>'
+
+
+def get_element_step(el: "Element") -> Optional[Union[int, str]]:
+    """要素のステップ番号を安全に取得する"""
+    val = getattr(el, "_step", None)
+    if val is not None:
+        return val
+    if getattr(el, "fragment", False):
+        idx = getattr(el, "fragment_index", None)
+        return idx if idx is not None else "+"
+    return None
+
+
+class StepProperty:
+    """個別要素指定（card.step = 1）とコンテキストマネージャ（with s.step():）を受け付けるハイブリッドプロパティ"""
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+
+        class _CallableStep:
+            def __call__(_self, step: Optional[Union[int, str]] = None, animation: str = "fade-in"):
+                return instance._step_context(step, animation)
+
+            def __enter__(_self):
+                _self._ctx = instance._step_context()
+                return _self._ctx.__enter__()
+
+            def __exit__(_self, exc_type, exc_val, exc_tb):
+                return _self._ctx.__exit__(exc_type, exc_val, exc_tb)
+
+            def __eq__(_self, other):
+                return instance._step == other
+
+            def __repr__(_self):
+                return f"<StepProperty: {instance._step}>"
+
+        return _CallableStep()
+
+    def __set__(self, instance, value):
+        if instance is not None:
+            instance._step = value
 
 
 class Element:
     """すべての要素の基底クラス"""
-    def __init__(self, fragment: Union[bool, str] = False, fragment_index: Optional[int] = None):
+    def __init__(
+        self,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        if fragment and not animation and isinstance(fragment, str) and fragment != "fade-in":
+            animation = fragment
+        if fragment_index is not None and step is None:
+            step = fragment_index
+        elif fragment and step is None:
+            step = "+"
+
+        self._step = step
+        self.animation = animation
         self.fragment = fragment
         self.fragment_index = fragment_index
 
-    def as_fragment(self, effect: Union[bool, str] = True, index: Optional[int] = None) -> "Element":
-        """この要素を Reveal.js フラグメントアニメーション要素に指定する (メソッドチェーン可能)"""
+    @property
+    def step(self) -> Optional[Union[int, str]]:
+        return self._step
+
+    @step.setter
+    def step(self, value: Optional[Union[int, str]]):
+        self._step = value
+
+    def as_fragment(self, effect: str = "fade-in", index: int = None) -> "Element":
+        """メソッドチェーン用: 要素をフラグメントアニメーション化する"""
+        self.animation = effect
         self.fragment = effect
-        self.fragment_index = index
+        if index is not None:
+            self._step = index
+            self.fragment_index = index
+        elif self._step is None:
+            self._step = "+"
         return self
 
-    def wrap_fragment(self, html: str) -> str:
-        """フラグメント指定がある場合、HTMLタグに fragment クラスおよび data-fragment-index 属性を付与する"""
-        if not self.fragment or not html or not html.strip():
-            return html
-
-        cls = "fragment"
-        if isinstance(self.fragment, str) and self.fragment.lower() not in ("true", "1", "fade-in", ""):
-            cls = f"fragment {self.fragment.strip()}"
-        elif self.fragment is True:
-            cls = "fragment"
-
-        idx_attr = f' data-fragment-index="{self.fragment_index}"' if self.fragment_index is not None else ""
-
-        stripped = html.strip()
-        tag_match = re.match(r'^<([a-zA-Z0-9_-]+)([^>]*)>', stripped)
-        # Markdown 以外の単一外枠要素（Card, Image, GridCell等）はルートタグに class/data-fragment-index を直接付与
-        if tag_match and not isinstance(self, Markdown):
-            tag_name = tag_match.group(1)
-            attrs = tag_match.group(2)
-
-            if re.search(r'\bclass="([^"]*)"', attrs):
-                new_attrs = re.sub(r'\bclass="([^"]*)"', rf'class="\1 {cls}"', attrs)
-            elif re.search(r"\bclass='([^']*)'", attrs):
-                new_attrs = re.sub(r"\bclass='([^']*)'", rf"class='\1 {cls}'", attrs)
-            else:
-                new_attrs = f' class="{cls}"' + attrs
-
-            if idx_attr:
-                new_attrs += idx_attr
-
-            return f'<{tag_name}{new_attrs}>' + stripped[tag_match.end():]
-        else:
-            return f'<div class="{cls}"{idx_attr}>\n{html}\n</div>'
+    def wrap_fragment(self, inner_html: str) -> str:
+        """フラグメントアニメーション用のdivラッパーを適用する"""
+        step_val = get_element_step(self)
+        if step_val is None:
+            return inner_html
+        return wrap_with_fragment(inner_html, step_val, self.animation or "fade-in")
 
     def to_html(self, embed: bool = True) -> str:
         raise NotImplementedError
@@ -298,23 +361,85 @@ class Element:
 
 class Container(Element):
     """子要素を持つことができる領域（コンテナ）の基底クラス"""
-    def __init__(self, fragment: Union[bool, str] = False, fragment_index: Optional[int] = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
-        self.elements: List[Element] = []
+    step = StepProperty()
 
-    def add(self, element: Element) -> Element:
-        self.elements.append(element)
-        return element
+    def __init__(
+        self,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional["Container"] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
+        self.elements: List[Element] = []
+        self.parent = parent
+        self._current_step: Optional[Union[int, str]] = None
+        self._current_animation: Optional[str] = None
+        self._step_counter: int = 0
+
+    def get_root_container(self) -> "Container":
+        curr = self
+        while curr.parent is not None:
+            curr = curr.parent
+        return curr
+
+    @contextlib.contextmanager
+    def _step_context(self, step: Optional[Union[int, str]] = None, animation: str = "fade-in"):
+        """reveal.js のステップアニメーション用コンテキストマネージャ"""
+        root = self.get_root_container()
+        prev_step = self._current_step
+        prev_anim = self._current_animation
+
+        if step is None:
+            root._step_counter += 1
+            cur_step = root._step_counter
+        else:
+            cur_step = step
+            if isinstance(step, int):
+                root._step_counter = max(root._step_counter, step)
+
+        self._current_step = cur_step
+        self._current_animation = animation
+        try:
+            yield cur_step
+        finally:
+            self._current_step = prev_step
+            self._current_animation = prev_anim
+
+    def _resolve_step_and_animation(
+        self,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None
+    ) -> Tuple[Optional[Union[int, str]], Optional[str]]:
+        eff_step = self._current_step if step is None else step
+        eff_anim = self._current_animation if animation is None else animation
+        return eff_step, eff_anim
 
     def add_markdown(
         self,
         text: str,
-        step: Union[bool, str] = False,
-        step_effect: str = None,
+        step: Optional[Union[bool, int, str]] = None,
+        step_effect: str = "fade-in",
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ) -> "Markdown":
-        md = Markdown(text, step=step, step_effect=step_effect, fragment=fragment, fragment_index=fragment_index)
+        eff_step, eff_anim = self._resolve_step_and_animation(
+            step if isinstance(step, (int, str)) and not isinstance(step, bool) else None,
+            animation
+        )
+        if step is True and eff_step is None:
+            eff_step = "+"
+
+        md = Markdown(
+            text,
+            step=eff_step,
+            step_effect=step_effect or eff_anim or "fade-in",
+            animation=eff_anim,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
         self.elements.append(md)
         return md
 
@@ -327,10 +452,13 @@ class Container(Element):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None,
         **kwargs
     ) -> "Card":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
         card = Card(
             color=color,
             bg=bg,
@@ -339,6 +467,9 @@ class Container(Element):
             border_color=border_color,
             text_color=text_color,
             style=style,
+            step=eff_step,
+            animation=eff_anim,
+            parent=self,
             fragment=fragment,
             fragment_index=fragment_index,
             **kwargs
@@ -364,67 +495,157 @@ class Container(Element):
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
         height: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ) -> "Grid":
-        grid = Grid(col=col, row=row, gap=gap, height=height, fragment=fragment, fragment_index=fragment_index)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        grid = Grid(
+            col=col,
+            row=row,
+            gap=gap,
+            height=height,
+            step=eff_step,
+            animation=eff_anim,
+            parent=self,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
         self.elements.append(grid)
         return grid
 
-    def add_graph(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Graph":
-        graph = Graph(obj, fragment=fragment, fragment_index=fragment_index)
+    def add_graph(
+        self,
+        obj,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Graph":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        graph = Graph(obj, step=eff_step, animation=eff_anim, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(graph)
         return graph
 
-    def add_chart(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Graph":
-        """add_graph のエイリアス"""
-        return self.add_graph(obj, fragment=fragment, fragment_index=fragment_index)
+    def add_chart(
+        self,
+        obj,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Graph":
+        return self.add_graph(obj, step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
 
-    def add_table(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None) -> "Table":
-        """Pandas DataFrame等を埋め込む（テーブル専用CSSが適用される）"""
-        table = Table(obj, fragment=fragment, fragment_index=fragment_index)
+    def add_table(
+        self,
+        obj,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Table":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        table = Table(obj, step=eff_step, animation=eff_anim, fragment=fragment, fragment_index=fragment_index)
         self.elements.append(table)
         return table
 
     def add_html(
         self,
-        path_or_html: str,
+        path_or_str: str,
         iframe: bool = False,
         height: str = "100%",
         width: str = "100%",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
-    ) -> "HTMLEmbed":
-        """
-        外部のHTMLファイルパス、または生HTMLタグを追加する
-        iframe=False (デフォルト): <body>の中身を抽出・Plotlyの正規化を行い直接DOMとして埋め込む
-        iframe=True: 独立したiframeとして読み込む（CSSのコンフリクトを避けたい場合）
-        """
-        html_obj = HTMLEmbed(path_or_html, iframe=iframe, height=height, width=width, fragment=fragment, fragment_index=fragment_index)
-        self.elements.append(html_obj)
-        return html_obj
+    ) -> "HTML":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        html = HTML(
+            path_or_str,
+            iframe=iframe,
+            height=height,
+            width=width,
+            step=eff_step,
+            animation=eff_anim,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
+        self.elements.append(html)
+        return html
 
     def add_image(
         self,
-        src: str = None,
-        img_path: str = None,
+        src: Union[str, bytes, Path, "PIL.Image.Image"] = None,
+        img_path=None,
         height: str = None,
         caption: str = None,
+        fit: str = None,
+        scale: float = None,
+        width: str = None,
+        align: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ) -> "Image":
-        actual_src = img_path if img_path is not None else src
-        img = Image(src=actual_src, height=height, caption=caption, fragment=fragment, fragment_index=fragment_index)
+        actual_src = src if src is not None else img_path
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        img = Image(
+            actual_src,
+            height=height,
+            caption=caption,
+            fit=fit,
+            scale=scale,
+            width=width,
+            align=align,
+            step=eff_step,
+            animation=eff_anim,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
         self.elements.append(img)
         return img
 
-    def add_memo(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None) -> "Memo":
-        memo = Memo(text, fragment=fragment, fragment_index=fragment_index)
+    def add_memo(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Memo":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        memo = Memo(
+            text,
+            step=eff_step,
+            animation=eff_anim,
+            parent=self,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
         self.elements.append(memo)
         return memo
 
-    def add_point(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None) -> "Point":
-        point = Point(text, fragment=fragment, fragment_index=fragment_index)
+    def add_point(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ) -> "Point":
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        point = Point(
+            text,
+            step=eff_step,
+            animation=eff_anim,
+            parent=self,
+            fragment=fragment,
+            fragment_index=fragment_index
+        )
         self.elements.append(point)
         return point
 
@@ -433,25 +654,31 @@ class Container(Element):
         text: str = "",
         x: Union[int, float, str] = 0,
         y: Union[int, float, str] = 0,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None,
         **kwargs
     ) -> "StampMarkdown":
-        """
-        スライド上の指定座標 (x, y) にテキスト・マークダウンを絶対配置（スタンプ）する。
-        レイアウトの流れを崩さず、グラフや表の上に「↓ココ」「注目！」などの注釈をハンコのように押すことができます。
-        """
         if "str" in kwargs and not text:
             text = kwargs.pop("str")
-        stamp = StampMarkdown(text=text, x=x, y=y, fragment=fragment, fragment_index=fragment_index, **kwargs)
+        eff_step, eff_anim = self._resolve_step_and_animation(step, animation)
+        stamp = StampMarkdown(
+            text=text,
+            x=x,
+            y=y,
+            step=eff_step,
+            animation=eff_anim,
+            fragment=fragment,
+            fragment_index=fragment_index,
+            **kwargs
+        )
         self.elements.append(stamp)
         return stamp
 
-    def add_stamp(self, *args, **kwargs) -> "StampMarkdown":
-        """set_markdown のエイリアス"""
+    def set_stamp(self, *args, **kwargs) -> "StampMarkdown":
         return self.set_markdown(*args, **kwargs)
 
-    # 後方互換性プロパティ
     @property
     def markdown(self) -> str:
         return ""
@@ -477,11 +704,16 @@ class Container(Element):
         self.add_graph(fig)
 
     def to_html(self, embed: bool = True) -> str:
-        parts = [el.to_html(embed=embed) for el in self.elements]
-        html = "\n".join(filter(None, parts))
-        if type(self) is Container and self.fragment:
-            return self.wrap_fragment(html)
-        return html
+        parts = []
+        for el in self.elements:
+            html = el.to_html(embed=embed)
+            if not html:
+                continue
+            step_val = get_element_step(el)
+            if step_val is not None and not isinstance(el, (GridCell, StampMarkdown)):
+                html = wrap_with_fragment(html, step_val, getattr(el, "animation", "fade-in"))
+            parts.append(html)
+        return "\n".join(parts)
 
     def has_chart(self) -> bool:
         return any(el.has_chart() for el in self.elements)
@@ -491,381 +723,341 @@ class Markdown(Element):
     def __init__(
         self,
         text: str,
-        step: Union[bool, str] = False,
-        step_effect: str = None,
+        step: Optional[Union[int, str]] = None,
+        step_effect: str = "fade-in",
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
         self.text = text
-        self.step = step
         self.step_effect = step_effect
 
     def to_html(self, embed: bool = True) -> str:
-        is_step = bool(self.step)
-        eff = self.step_effect
-        if isinstance(self.step, str) and self.step.lower() not in ("true", "1", "false", "0"):
-            is_step = True
-            eff = self.step
-        html = format_inline_markdown(self.text, step=is_step, step_effect=eff)
-        return self.wrap_fragment(html)
+        has_step = (self.step is not None) or bool(self.fragment)
+        return format_inline_markdown(self.text, step=has_step, step_effect=self.step_effect)
 
 
 class StampMarkdown(Element):
-    """
-    スライド上の指定座標 (x, y) に絶対配置（スタンプ）するテキスト・マークダウン要素。
-    既存のレイアウト（グラフや表など）の流れを崩さず、上からハンコを押すように注釈や矢印を配置できます。
-    """
+    """絶対配置 (x, y) されるマークダウン・テキストスタンプ"""
     def __init__(
         self,
         text: str = "",
         x: Union[int, float, str] = 0,
         y: Union[int, float, str] = 0,
-        color: Optional[str] = None,
-        font_size: Optional[str] = None,
-        font_weight: Optional[str] = None,
         bg_color: Optional[str] = None,
-        background: Optional[str] = None,
+        color: Optional[str] = None,
+        padding: str = "4px 8px",
+        border_radius: str = "4px",
+        font_size: str = "1em",
+        font_weight: str = "bold",
         border: Optional[str] = None,
-        border_radius: Optional[str] = None,
-        padding: Optional[str] = None,
-        rotate: Optional[Union[int, float, str]] = None,
-        z_index: int = 100,
-        pointer_events: str = "none",
         css_class: str = "",
         class_name: str = "",
         style: Optional[str] = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None,
         **kwargs
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
         self.text = text
         self.x = f"{x}px" if isinstance(x, (int, float)) else str(x)
         self.y = f"{y}px" if isinstance(y, (int, float)) else str(y)
+        self.bg_color = bg_color
         self.color = color
+        self.padding = padding
+        self.border_radius = border_radius
         self.font_size = font_size
         self.font_weight = font_weight
-        self.bg_color = bg_color or background
         self.border = border
-        self.border_radius = border_radius
-        self.padding = padding
-        self.rotate = rotate
-        self.z_index = z_index
-        self.pointer_events = pointer_events
         self.css_class = css_class or class_name
-        self.custom_style = style
+        self.style = style
         self.extra_kwargs = kwargs
 
     def to_html(self, embed: bool = True) -> str:
-        if not self.text:
-            return ""
-
         styles = [
-            "position: absolute",
-            f"left: {self.x}",
-            f"top: {self.y}",
-            f"z-index: {self.z_index}",
-            f"pointer-events: {self.pointer_events}",
+            "position: absolute;",
+            f"left: {self.x};",
+            f"top: {self.y};",
+            "z-index: 100;",
+            "box-sizing: border-box;",
         ]
-
-        if self.color:
-            styles.append(f"color: {self.color}")
-        if self.font_size:
-            styles.append(f"font-size: {self.font_size}")
-        if self.font_weight:
-            styles.append(f"font-weight: {self.font_weight}")
         if self.bg_color:
-            styles.append(f"background: {self.bg_color}")
-        if self.border:
-            styles.append(f"border: {self.border}")
-        if self.border_radius:
-            styles.append(f"border-radius: {self.border_radius}")
+            styles.append(f"background-color: {self.bg_color};")
+        if self.color:
+            styles.append(f"color: {self.color};")
         if self.padding:
-            styles.append(f"padding: {self.padding}")
-        if self.rotate is not None:
-            rot_val = f"{self.rotate}deg" if isinstance(self.rotate, (int, float)) else str(self.rotate)
-            styles.append(f"transform: rotate({rot_val})")
-        if self.custom_style:
-            styles.append(self.custom_style.strip().rstrip(";"))
+            styles.append(f"padding: {self.padding};")
+        if self.border_radius:
+            styles.append(f"border-radius: {self.border_radius};")
+        if self.font_size:
+            styles.append(f"font-size: {self.font_size};")
+        if self.font_weight:
+            styles.append(f"font-weight: {self.font_weight};")
+        if self.border:
+            styles.append(f"border: {self.border};")
+        if self.style:
+            styles.append(self.style.rstrip("; ") + ";")
 
-        style_str = "; ".join(styles)
-        classes = ["slide-stamp"]
+        for k, v in self.extra_kwargs.items():
+            css_prop = k.replace("_", "-")
+            styles.append(f"{css_prop}: {v};")
+
+        style_str = " ".join(styles)
+        cls_parts = ["slide-stamp"]
         if self.css_class:
-            classes.append(self.css_class)
-        class_attr = " ".join(classes)
+            cls_parts.append(self.css_class)
+
+        step_val = get_element_step(self)
+        frag_attr = ""
+        if step_val is not None:
+            cls_parts.append("fragment")
+            anim = (self.animation or "fade-in").strip()
+            anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+            if anim and anim != "fade-in":
+                cls_parts.append(anim)
+            frag_attr = f' data-fragment-index="{step_val}"'
 
         inner_html = format_inline_markdown(self.text)
-        stamp_html = f'<div class="{class_attr}" style="{style_str}">{inner_html}</div>'
-        return self.wrap_fragment(stamp_html)
-
-    def has_chart(self) -> bool:
-        return False
+        return f'<div class="{" ".join(cls_parts)}" style="{style_str}"{frag_attr}>{inner_html}</div>'
 
 
 class Graph(Element):
-    """Plotly, Matplotlib, Bokeh, Pandas 等を統一的にラップしてHTML化する要素"""
-    def __init__(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+    def __init__(
+        self,
+        obj,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
         self.raw_obj = obj
         self.html_snippet = to_graph_html(obj)
 
     def to_html(self, embed: bool = True) -> str:
         if not self.html_snippet:
             return ""
-        graph_html = f'<div class="included-chart-container">\n{self.html_snippet}\n</div>'
-        return self.wrap_fragment(graph_html)
+        return f'<div class="included-chart-container">\n{self.html_snippet}\n</div>'
 
     def has_chart(self) -> bool:
         return True
 
-# エイリアス
+
 Chart = Graph
 
 
 class Table(Element):
-    """Pandas DataFrame 等を統一的にラップしてテーブルとしてHTML化する要素"""
-    def __init__(self, obj, fragment: Union[bool, str] = False, fragment_index: int = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
-        self.raw_obj = obj
-        self.html_snippet = to_graph_html(obj)
-
-    def to_html(self, embed: bool = True) -> str:
-        if not self.html_snippet:
-            return ""
-        table_html = f'<div class="slide-table">\n{self.html_snippet}\n</div>'
-        return self.wrap_fragment(table_html)
-
-    def has_chart(self) -> bool:
-        return False
-
-
-class HTMLEmbed(Element):
-    """外部HTMLファイルパスまたは生HTML文字列を埋め込む要素"""
     def __init__(
         self,
-        path_or_html: str,
+        obj,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
+        self.obj = obj
+
+    def to_html(self, embed: bool = True) -> str:
+        if hasattr(self.obj, "to_html"):
+            return self.obj.to_html(classes="slide-table", border=0)
+        return str(self.obj)
+
+
+class HTML(Element):
+    def __init__(
+        self,
+        path_or_str: str,
         iframe: bool = False,
         height: str = "100%",
         width: str = "100%",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
-        self.path_or_html = path_or_html
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
+        self.path_or_str = path_or_str
         self.iframe = iframe
         self.height = height
         self.width = width
-        
-    def to_html(self, embed: bool = True) -> str:
-        if not self.path_or_html:
-            return ""
-            
-        stripped = self.path_or_html.strip()
-        
-        # iframe モードの場合 (パス指定前提)
-        if self.iframe:
-            # 生HTMLタグが渡された場合はiframeでは厳しいのでそのまま出力する
-            if stripped.startswith("<"):
-                return self.wrap_fragment(stripped)
-            # style="border:none;" などで見栄えを良くする
-            return self.wrap_fragment(f'<iframe src="{stripped}" width="{self.width}" height="{self.height}" style="border:none; overflow:hidden;" scrolling="no"></iframe>')
-            
-        # iframe=False (embed) モードの場合
-        # ファイルパスの判定
-        if os.path.exists(stripped) and stripped.lower().endswith(".html"):
-            try:
-                with open(stripped, "r", encoding="utf-8") as f:
-                    content = f.read()
 
-                from .utils import normalize_embedded_html
-                res = normalize_embedded_html(content, width=self.width, height=self.height)
-                return self.wrap_fragment(res)
-            except Exception as e:
-                return f"<div>Error loading HTML file: {stripped} ({e})</div>"
-                
-        # ファイルパスでない場合は生HTMLとして扱う
-        return self.wrap_fragment(stripped)
-        
+    def to_html(self, embed: bool = True) -> str:
+        content = self.path_or_str.strip()
+        if content.endswith(".html") or content.endswith(".htm") or os.path.exists(content):
+            try:
+                with open(content, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                pass
+
+        if self.iframe:
+            from .utils import normalize_embedded_html
+            b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+            data_uri = f"data:text/html;base64,{b64}"
+            return f'<iframe src="{data_uri}" style="width: {self.width}; height: {self.height}; border: none;" allowfullscreen></iframe>'
+
+        from .utils import normalize_embedded_html
+        return normalize_embedded_html(content, width=self.width, height=self.height)
+
     def has_chart(self) -> bool:
-        # iframeやembedの中にPlotlyが含まれている可能性があるため一応Trueにしておく
-        return True
+        return "plotly" in self.path_or_str.lower() or "chart" in self.path_or_str.lower()
 
 
 class Image(Element):
-    """画像要素（ローカルファイルやPILイメージを自動でBase64エンコードして完全自己完結化）"""
     def __init__(
         self,
-        src=None,
+        src: Union[str, bytes, Path, "PIL.Image.Image"] = None,
         img_path=None,
         height: str = None,
         caption: str = None,
+        fit: str = None,
+        scale: float = None,
+        width: str = None,
+        align: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
-        self.src = img_path if img_path is not None else src
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
+        self.src = src if src is not None else img_path
         self.height = height
         self.caption = caption
+        self.fit = fit
+        self.scale = scale
+        self.width = width
+        self.align = align
 
     def to_html(self, embed: bool = True) -> str:
         if self.src is None:
             return ""
 
         src_uri = ""
-        # 1. PIL Image または save メソッドを持つオブジェクト
-        if hasattr(self.src, "save") and callable(self.src.save):
-            try:
-                buf = io.BytesIO()
-                fmt = getattr(self.src, "format", None) or "PNG"
-                self.src.save(buf, format=fmt)
-                b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-                src_uri = f"data:image/{fmt.lower()};base64,{b64}"
-            except Exception:
-                src_uri = ""
-        # 2. ローカルファイルパスまたは文字列
-        elif isinstance(self.src, (str, Path)):
-            src_str = str(self.src).strip()
-            if embed and os.path.exists(src_str):
-                try:
-                    p = Path(src_str)
-                    ext = p.suffix.lower().lstrip(".")
-                    mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
-                    with open(p, "rb") as f:
-                        b64 = base64.b64encode(f.read()).decode("utf-8")
-                        src_uri = f"data:{mime};base64,{b64}"
-                except Exception:
+        media_dir = None
+        if EXPORT_CONTEXT.get("export_dir"):
+            media_dir = Path(EXPORT_CONTEXT["export_dir"]) / "media"
+            media_dir.mkdir(parents=True, exist_ok=True)
+
+        if isinstance(self.src, str):
+            src_str = self.src
+            if os.path.exists(src_str):
+                p = Path(src_str)
+                if media_dir:
+                    import shutil
+                    filename = p.name
+                    out_path = media_dir / filename
+                    if out_path.exists():
+                        EXPORT_CONTEXT["media_counter"] += 1
+                        filename = f"{p.stem}_{EXPORT_CONTEXT['media_counter']}{p.suffix}"
+                        out_path = media_dir / filename
+                    shutil.copy2(p, out_path)
+                    src_uri = f"media/{filename}"
+                elif embed:
+                    try:
+                        ext = p.suffix.lower().lstrip(".")
+                        mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
+                        with open(p, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            src_uri = f"data:{mime};base64,{b64}"
+                    except Exception:
+                        src_uri = src_str
+                else:
                     src_uri = src_str
             else:
                 src_uri = src_str
+        elif isinstance(self.src, bytes):
+            if media_dir:
+                EXPORT_CONTEXT["media_counter"] += 1
+                filename = f"image_{EXPORT_CONTEXT['media_counter']}.png"
+                with open(media_dir / filename, "wb") as f:
+                    f.write(self.src)
+                src_uri = f"media/{filename}"
+            else:
+                b64 = base64.b64encode(self.src).decode("utf-8")
+                src_uri = f"data:image/png;base64,{b64}"
+        elif isinstance(self.src, Path):
+            p = self.src
+            if p.exists():
+                if media_dir:
+                    import shutil
+                    filename = p.name
+                    out_path = media_dir / filename
+                    if out_path.exists():
+                        EXPORT_CONTEXT["media_counter"] += 1
+                        filename = f"{p.stem}_{EXPORT_CONTEXT['media_counter']}{p.suffix}"
+                        out_path = media_dir / filename
+                    shutil.copy2(p, out_path)
+                    src_uri = f"media/{filename}"
+                elif embed:
+                    try:
+                        ext = p.suffix.lower().lstrip(".")
+                        mime = f"image/{ext}" if ext != "svg" else "image/svg+xml"
+                        with open(p, "rb") as f:
+                            b64 = base64.b64encode(f.read()).decode("utf-8")
+                            src_uri = f"data:{mime};base64,{b64}"
+                    except Exception:
+                        src_uri = str(p)
+                else:
+                    src_uri = str(p)
+            else:
+                src_uri = str(p)
+        elif hasattr(self.src, "save"):
+            buf = io.BytesIO()
+            self.src.save(buf, format="PNG")
+            img_bytes = buf.getvalue()
+            if media_dir:
+                EXPORT_CONTEXT["media_counter"] += 1
+                filename = f"image_{EXPORT_CONTEXT['media_counter']}.png"
+                with open(media_dir / filename, "wb") as f:
+                    f.write(img_bytes)
+                src_uri = f"media/{filename}"
+            else:
+                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                src_uri = f"data:image/png;base64,{b64}"
         else:
             src_uri = str(self.src)
 
-        if not src_uri:
-            return ""
-
-        style_parts = [
-            "max-width: 100%;",
-            "max-height: 100%;",
-            "object-fit: contain;",
-        ]
+        style_parts = []
+        if self.fit:
+            style_parts.append(f"object-fit: {self.fit} !important;")
         if self.height:
-            h = self.height if (self.height.endswith("px") or self.height.endswith("%") or self.height.endswith("vh")) else f"{self.height}px"
-            style_parts.append(f"height: {h};")
-            style_parts.append(f"max-height: {h};")
-        else:
-            style_parts.append("width: 100%;")
-            style_parts.append("height: 100%;")
+            style_parts.append(f"height: {self.height} !important;")
+        if self.width:
+            style_parts.append(f"width: {self.width} !important;")
+        if self.scale:
+            style_parts.append(f"transform: scale({self.scale});")
+        if self.align:
+            if self.align == "center":
+                style_parts.append("margin-left: auto !important; margin-right: auto !important;")
+            elif self.align == "left":
+                style_parts.append("margin-right: auto !important; margin-left: 0 !important;")
+            elif self.align == "right":
+                style_parts.append("margin-left: auto !important; margin-right: 0 !important;")
 
-        style_attr = f' style="{" ".join(style_parts)}"'
+        style_attr = f' style="{" ".join(style_parts)}"' if style_parts else ""
         caption_html = f'<figcaption>{self.caption}</figcaption>' if self.caption else ""
-        img_html = f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
-        return self.wrap_fragment(img_html)
+        return f'<figure class="slide-image">\n  <img src="{src_uri}"{style_attr}>\n  {caption_html}\n</figure>'
 
 
 def _is_dark_color(c: str) -> bool:
-    if not isinstance(c, str):
+    if not c or not c.startswith("#") or len(c) < 7:
         return False
-    c_clean = c.strip().lstrip("#")
-    if len(c_clean) == 3:
-        c_clean = "".join([ch * 2 for ch in c_clean])
-    if len(c_clean) == 6:
-        try:
-            r = int(c_clean[0:2], 16)
-            g = int(c_clean[2:4], 16)
-            b = int(c_clean[4:6], 16)
-            return (r * 299 + g * 587 + b * 114) / 1000 < 128
-        except ValueError:
-            return False
-    return False
-
-
-CARD_PALETTE_MAP = {
-    # Yellow / Accent
-    "yellow": "card-yellow",
-    "soft_yellow": "card-soft-yellow",
-    "soft-yellow": "card-soft-yellow",
-    "yellow_soft": "card-soft-yellow",
-    "yellow-soft": "card-soft-yellow",
-    "accent_soft": "card-soft-yellow",
-    "accent-soft": "card-soft-yellow",
-    "accent_light": "card-yellow",
-    "accent-light": "card-yellow",
-    "accent": "card-yellow",
-    "primary_accent": "card-yellow",
-    "primary-accent": "card-yellow",
-
-    # Blue / Sub Accent
-    "blue": "card-blue",
-    "soft_blue": "card-soft-blue",
-    "soft-blue": "card-soft-blue",
-    "blue_soft": "card-soft-blue",
-    "blue-soft": "card-soft-blue",
-    "sub_accent": "card-blue",
-    "sub-accent": "card-blue",
-    "sub_accent_light": "card-soft-blue",
-    "sub-accent-light": "card-soft-blue",
-    "accent_blue": "card-blue",
-    "accent-blue": "card-blue",
-    "accent_blue_soft": "card-soft-blue",
-    "accent-blue-soft": "card-soft-blue",
-    "accent_blue_light": "card-soft-blue",
-    "accent-blue-light": "card-soft-blue",
-
-    # Red
-    "red": "card-red",
-    "soft_red": "card-soft-red",
-    "soft-red": "card-soft-red",
-    "red_soft": "card-soft-red",
-    "red-soft": "card-soft-red",
-    "color_red": "card-red",
-    "color-red": "card-red",
-    "color_red_soft": "card-soft-red",
-    "color-red-soft": "card-soft-red",
-
-    # Green
-    "green": "card-green",
-    "soft_green": "card-soft-green",
-    "soft-green": "card-soft-green",
-    "green_soft": "card-soft-green",
-    "green-soft": "card-soft-green",
-    "color_green": "card-green",
-    "color-green": "card-green",
-    "color_green_soft": "card-soft-green",
-    "color-green-soft": "card-soft-green",
-
-    # Gold / Amber
-    "gold": "card-gold",
-    "soft_gold": "card-soft-gold",
-    "soft-gold": "card-soft-gold",
-    "gold_soft": "card-soft-gold",
-    "gold-soft": "card-soft-gold",
-    "color_gold": "card-gold",
-    "color-gold": "card-gold",
-    "color_gold_soft": "card-soft-gold",
-    "color-gold-soft": "card-soft-gold",
-    "accent_dark": "card-gold",
-    "accent-dark": "card-gold",
-
-    # Gray / Slate
-    "gray": "card-gray",
-    "grey": "card-gray",
-    "slate": "card-gray",
-    "light": "card-gray",
-
-    # Purple
-    "purple": "card-purple",
-    "violet": "card-purple",
-
-    # Dark / Black
-    "dark": "card-dark",
-    "black": "card-dark",
-    "bg_dark": "card-dark",
-    "bg-dark": "card-dark",
-}
+    try:
+        r = int(c[1:3], 16)
+        g = int(c[3:5], 16)
+        b = int(c[5:7], 16)
+        lum = 0.299 * r + 0.587 * g + 0.114 * b
+        return lum < 128
+    except Exception:
+        return False
 
 
 class Card(Container):
+    """スタイリングされたカードコンテナ要素"""
     def __init__(
         self,
         color: str = None,
@@ -875,11 +1067,14 @@ class Card(Container):
         border_color: str = None,
         text_color: str = None,
         style: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None,
         **kwargs
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+        super().__init__(step=step, animation=animation, parent=parent, fragment=fragment, fragment_index=fragment_index)
         self.color = color.lower() if color else None
         self.bg = bg
         self.height = height
@@ -893,51 +1088,50 @@ class Card(Container):
         cls_parts = ["card"]
         styles = []
 
-        target_color = (self.bg or self.color or "").strip()
-        if target_color and target_color != "none":
-            norm_key = target_color.lower().replace("-", "_")
-            if norm_key in CARD_PALETTE_MAP:
-                cls_parts.append(CARD_PALETTE_MAP[norm_key])
-            elif target_color.startswith("var(") or target_color.startswith("--"):
-                c_val = target_color if target_color.startswith("var(") else f"var({target_color})"
-                styles.append(f"background: {c_val};")
-            elif target_color.startswith("#") or target_color.startswith("rgb") or target_color.startswith("hsl"):
-                # 任意のCSSカラー指定（HEXカラー #001122 や rgba など）
-                styles.append(f"background: {target_color};")
-                # 暗い背景色の場合は自動で白文字＆透過ボーダーに調整して可読性を維持
-                if _is_dark_color(target_color) and not self.text_color:
-                    styles.append("color: #f8fafc;")
-                    if not self.border and not self.border_color:
-                        styles.append("border-color: rgba(255, 255, 255, 0.18);")
-            else:
-                # 未知の名前でも CSS変数 var(--...) として解決を試みる（例: laser_color -> var(--laser-color)）
-                css_var = target_color.replace("_", "-")
-                styles.append(f"background: var(--{css_var}, {target_color});")
-                cls_parts.append(f"card-{css_var}")
+        if self.color:
+            c = self.color.replace("_", "-")
+            cls_parts.append(f"card-{c}")
+
+        if self.bg:
+            styles.append(f"background: {self.bg} !important;")
+            if not self.text_color and _is_dark_color(self.bg):
+                styles.append("color: #f8fafc !important;")
+
+        if self.border:
+            styles.append(f"border: {self.border} !important;")
+        elif self.border_color:
+            styles.append(f"border-color: {self.border_color} !important;")
 
         if self.text_color:
-            styles.append(f"color: {self.text_color};")
-        if self.border:
-            styles.append(f"border: {self.border};")
-        elif self.border_color:
-            styles.append(f"border-color: {self.border_color};")
+            styles.append(f"color: {self.text_color} !important;")
 
         if self.height:
-            h = self.height if (self.height.endswith("px") or self.height.endswith("%") or self.height.endswith("vh")) else f"{self.height}px"
-            styles.append(f"height: {h}; min-height: {h};")
+            styles.append(f"height: {self.height} !important;")
+            styles.append("min-height: 0 !important;")
 
         if self.custom_style:
-            styles.append(self.custom_style.strip().rstrip(";"))
+            styles.append(self.custom_style.rstrip("; ") + ";")
+
+        for k, v in self.extra_kwargs.items():
+            css_prop = k.replace("_", "-")
+            styles.append(f"{css_prop}: {v};")
 
         style_attr = f' style="{" ".join(styles)}"' if styles else ""
         inner_html = super().to_html(embed=embed)
-        card_html = f'<div class="{" ".join(cls_parts)}"{style_attr}>\n{inner_html}\n</div>'
-        return self.wrap_fragment(card_html)
+        return f'<div class="{" ".join(cls_parts)}"{style_attr}>\n{inner_html}\n</div>'
 
 
 class Memo(Container):
-    def __init__(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+    def __init__(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent, fragment=fragment, fragment_index=fragment_index)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -947,14 +1141,21 @@ class Memo(Container):
         inner = super().to_html(embed=embed)
         if inner:
             parts.append(inner)
-        memo_html = f'<div class="layout-memo">\n' + "\n".join(parts) + '\n</div>'
-        return self.wrap_fragment(memo_html)
+        return f'<div class="layout-memo">\n' + "\n".join(parts) + '\n</div>'
 
 
 class Point(Container):
     """ポイント強調ボックス (.point-box) 要素。内部に Grid や Image などを自由にネスト可能"""
-    def __init__(self, text: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+    def __init__(
+        self,
+        text: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent, fragment=fragment, fragment_index=fragment_index)
         self.text = text
 
     def to_html(self, embed: bool = True) -> str:
@@ -964,19 +1165,36 @@ class Point(Container):
         inner = super().to_html(embed=embed)
         if inner:
             parts.append(inner)
-        point_html = f'<div class="point-box">\n' + "\n".join(parts) + '\n</div>'
-        return self.wrap_fragment(point_html)
+        return f'<div class="point-box">\n' + "\n".join(parts) + '\n</div>'
 
 
 class GridCell(Container):
-    def __init__(self, name: str = "", fragment: Union[bool, str] = False, fragment_index: int = None):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+    def __init__(
+        self,
+        name: str = "",
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
+        fragment: Union[bool, str] = False,
+        fragment_index: int = None
+    ):
+        super().__init__(step=step, animation=animation, parent=parent, fragment=fragment, fragment_index=fragment_index)
         self.name = name
 
     def to_html(self, embed: bool = True) -> str:
         inner_html = super().to_html(embed=embed)
-        cell_html = f'<div class="grid-cell">\n{inner_html}\n</div>'
-        return self.wrap_fragment(cell_html)
+        cls_parts = ["grid-cell"]
+        frag_attrs = ""
+        step_val = get_element_step(self)
+        if step_val is not None:
+            cls_parts.append("fragment")
+            anim = (self.animation or "fade-in").strip()
+            anim = FRAGMENT_ANIMATION_ALIASES.get(anim, anim)
+            if anim and anim != "fade-in":
+                cls_parts.append(anim)
+            idx_attr = f' data-fragment-index="{step_val}"' if str(step_val) not in ("", "+", "None") else ""
+            frag_attrs = idx_attr
+        return f'<div class="{" ".join(cls_parts)}"{frag_attrs}>\n{inner_html}\n</div>'
 
 
 class Grid(Element):
@@ -986,14 +1204,18 @@ class Grid(Element):
         row: Union[int, Sequence[int], str] = 1,
         gap: str = "16px",
         height: str = None,
+        step: Optional[Union[int, str]] = None,
+        animation: Optional[str] = None,
+        parent: Optional[Container] = None,
         fragment: Union[bool, str] = False,
         fragment_index: int = None
     ):
-        super().__init__(fragment=fragment, fragment_index=fragment_index)
+        super().__init__(step=step, animation=animation, fragment=fragment, fragment_index=fragment_index)
         self.col = col
         self.row = row
         self.gap = gap
         self.height = height
+        self.parent = parent
 
         # 列数 (num_cols) の解決
         if isinstance(col, (list, tuple)):
@@ -1016,7 +1238,7 @@ class Grid(Element):
             self.num_rows = 1
 
         total_cells = max(self.num_cols * self.num_rows, 1)
-        self.cells: List[GridCell] = [GridCell(f"cell_{i}") for i in range(total_cells)]
+        self.cells: List[GridCell] = [GridCell(f"cell_{i}", parent=self.parent or self) for i in range(total_cells)]
 
     def __getitem__(self, key: Union[int, Tuple[int, int]]) -> GridCell:
         """NumPyライクな行列アクセス: g[row, col] または 1次元 g[idx]"""
@@ -1037,58 +1259,47 @@ class Grid(Element):
     def __iter__(self):
         return iter(self.cells)
 
-    # 後方互換性
     @property
     def left(self) -> GridCell:
         return self.cells[0]
 
     @property
     def right(self) -> GridCell:
-        return self.cells[self.num_cols - 1]
-
-    @property
-    def center(self) -> GridCell:
-        if self.num_cols >= 3:
-            return self.cells[1]
-        return self.cells[0]
+        return self.cells[1] if len(self.cells) > 1 else self.cells[0]
 
     def to_html(self, embed: bool = True) -> str:
-        # 列スタイル
+        style_parts = []
+
         if isinstance(self.col, (list, tuple)):
-            col_style = " ".join([f"{c}fr" for c in self.col])
+            cols_val = " ".join([f"{c}fr" if isinstance(c, (int, float)) else str(c) for c in self.col])
         elif ":" in str(self.col):
-            parts = [c.strip() for c in str(self.col).split(":") if c.strip()]
-            col_style = " ".join([f"{p}fr" for p in parts])
+            cols_val = " ".join([f"{part}fr" for part in str(self.col).split(":")])
         elif str(self.col).isdigit():
-            col_style = f"repeat({self.col}, minmax(0, 1fr))"
+            cols_val = f"repeat({self.col}, 1fr)"
         else:
-            col_style = "repeat(2, minmax(0, 1fr))"
+            cols_val = str(self.col)
+        style_parts.append(f"grid-template-columns: {cols_val}")
 
-        # 行スタイル
         if isinstance(self.row, (list, tuple)):
-            row_style = " ".join([f"{r}fr" for r in self.row])
+            rows_val = " ".join([f"{r}fr" if isinstance(r, (int, float)) else str(r) for r in self.row])
         elif ":" in str(self.row):
-            parts = [r.strip() for r in str(self.row).split(":") if r.strip()]
-            row_style = " ".join([f"{p}fr" for p in parts])
+            rows_val = " ".join([f"{part}fr" for part in str(self.row).split(":")])
         elif str(self.row).isdigit():
-            row_style = f"repeat({self.row}, minmax(0, 1fr))"
+            rows_val = f"repeat({self.row}, 1fr)"
         else:
-            row_style = "repeat(1, minmax(0, 1fr))"
+            rows_val = str(self.row)
+        style_parts.append(f"grid-template-rows: {rows_val}")
 
-        style_parts = [
-            f"grid-template-columns: {col_style}",
-            f"grid-template-rows: {row_style}",
-            f"gap: {self.gap}",
-        ]
+        if self.gap:
+            style_parts.append(f"gap: {self.gap}")
+
         if self.height:
-            h = self.height if (self.height.endswith("px") or self.height.endswith("%")) else f"{self.height}px"
-            style_parts.append(f"height: {h}")
-            style_parts.append(f"flex: 0 0 {h}")
+            style_parts.append(f"height: {self.height} !important")
+            style_parts.append("min-height: 0 !important")
 
         grid_style = f'style="{"; ".join(style_parts)};"'
         cells_html = "\n".join([cell.to_html(embed=embed) for cell in self.cells])
-        grid_html = f'<div class="custom-grid" {grid_style}>\n{cells_html}\n</div>'
-        return self.wrap_fragment(grid_html)
+        return f'<div class="custom-grid" {grid_style}>\n{cells_html}\n</div>'
 
     def has_chart(self) -> bool:
         return any(cell.has_chart() for cell in self.cells)
